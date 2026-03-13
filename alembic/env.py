@@ -6,10 +6,9 @@ from logging.config import fileConfig
 from dotenv import load_dotenv
 from sqlalchemy import engine_from_config, pool
 
-from alembic import context
-
 # Import models so Alembic's autogenerate can detect them.
 import backend.models  # noqa: F401
+from alembic import context
 from backend.database import Base
 
 load_dotenv()
