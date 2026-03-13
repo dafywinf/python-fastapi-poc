@@ -24,6 +24,9 @@ db-down:
 db-logs:
     docker compose logs -f db
 
+# Run all checks required before raising a PR
+ci: check test
+
 # Lint and type-check the codebase
 check:
     {{venv}}/ruff check .
