@@ -1,5 +1,7 @@
 "DESCRIPTION","DURATION IN MS","NAME","PARENT SUITE","START TIME","STATUS","STOP TIME","SUB SUITE","SUITE","TEST CLASS","TEST METHOD"
-"","9","test_deletes_existing_sequence","tests","2026-03-13","passed","2026-03-13","TestDeleteSequence","test_sequences","",""
+"","12","test_updates_both_fields","tests","2026-03-13","passed","2026-03-13","TestPartialUpdateSequence","test_sequences","",""
+"","7","test_returns_empty_list_when_no_sequences","tests","2026-03-13","passed","2026-03-13","TestListSequences","test_sequences","",""
+"","10","test_retrieves_existing_sequence","tests","2026-03-13","passed","2026-03-13","TestRetrieveSequence","test_sequences","",""
 "","3","test_returns_422_when_name_missing","tests","2026-03-13","passed","2026-03-13","TestCreateSequence","test_sequences","",""
 "sync def handlers run in the thread pool — DB requests execute in parallel.
 
@@ -14,8 +16,17 @@
         t=0.0  req5─────┤ time
         t=0.0  req6─────┘
         t=0.5  all complete  ← total elapsed ≈ 0.5s
-    ","690","test_sync_db_handlers_process_requests_concurrently","tests.perf","2026-03-13","passed","2026-03-13","","test_db_event_loop_blocking","",""
-"","9","test_response_contains_expected_fields","tests","2026-03-13","passed","2026-03-13","TestListSequences","test_sequences","",""
+    ","691","test_sync_db_handlers_process_requests_concurrently","tests.perf","2026-03-13","passed","2026-03-13","","test_db_event_loop_blocking","",""
+"","16","test_creates_sequence_with_all_fields","tests","2026-03-13","passed","2026-03-13","TestCreateSequence","test_sequences","",""
+"","10","test_deletes_existing_sequence","tests","2026-03-13","passed","2026-03-13","TestDeleteSequence","test_sequences","",""
+"","4","test_returns_404_for_unknown_id","tests","2026-03-13","passed","2026-03-13","TestPartialUpdateSequence","test_sequences","",""
+"Head-to-head: real DB calls prove async anti-pattern is measurably slower.
+
+    This is the test to show a colleague who argues that time.sleep is artificial.
+    With a real psycopg2 pg_sleep call the result is the same: blocking the event
+    loop serialises what should be parallel work.
+    ","3667","test_async_blocking_db_is_significantly_slower_than_sync","tests.perf","2026-03-13","passed","2026-03-13","","test_db_event_loop_blocking","",""
+"","14","test_updates_name","tests","2026-03-13","passed","2026-03-13","TestPartialUpdateSequence","test_sequences","",""
 "async def handlers with psycopg2 calls serialise on the event loop.
 
     The same 6 requests each running pg_sleep(0.5) now execute one at a time
@@ -26,10 +37,12 @@
         t=0.5  req1 done, req2 starts, blocks event loop
         t=1.0  req2 done, req3 starts ...
         t=2.5  req6 done  ← total elapsed ≈ 3.0s
-    ","3097","test_async_blocking_db_handlers_serialise_requests","tests.perf","2026-03-13","passed","2026-03-13","","test_db_event_loop_blocking","",""
-"","14","test_creates_sequence_with_all_fields","tests","2026-03-13","passed","2026-03-13","TestCreateSequence","test_sequences","",""
-"","3","test_returns_422_when_body_empty","tests","2026-03-13","passed","2026-03-13","TestCreateSequence","test_sequences","",""
-"","4","test_returns_404_for_unknown_id","tests","2026-03-13","passed","2026-03-13","TestRetrieveSequence","test_sequences","",""
+    ","3086","test_async_blocking_db_handlers_serialise_requests","tests.perf","2026-03-13","passed","2026-03-13","","test_db_event_loop_blocking","",""
+"","15","test_returns_all_created_sequences","tests","2026-03-13","passed","2026-03-13","TestListSequences","test_sequences","",""
+"Head-to-head comparison — the async anti-pattern is measurably slower.
+
+    This is the test to show a colleague who asks ""why not just make everything async?"".
+    ","3656","test_async_blocking_is_significantly_slower_than_sync","tests.perf","2026-03-13","passed","2026-03-13","","test_event_loop_blocking","",""
 "async def handlers with blocking calls serialise on the event loop.
 
     The same 6 requests each sleeping 0.5s now execute one at a time because
@@ -40,21 +53,7 @@
         t=0.5  req1 done, req2 starts, blocks event loop
         t=1.0  req2 done, req3 starts ...
         t=2.5  req6 done  ← total elapsed ≈ 3.0s
-    ","3067","test_async_blocking_handlers_serialise_requests","tests.perf","2026-03-13","passed","2026-03-13","","test_event_loop_blocking","",""
-"","4","test_returns_404_for_unknown_id","tests","2026-03-13","passed","2026-03-13","TestDeleteSequence","test_sequences","",""
-"","5","test_health_returns_ok","tests","2026-03-13","passed","2026-03-13","","test_health","",""
-"","14","test_updates_name","tests","2026-03-13","passed","2026-03-13","TestPartialUpdateSequence","test_sequences","",""
-"","10","test_retrieves_existing_sequence","tests","2026-03-13","passed","2026-03-13","TestRetrieveSequence","test_sequences","",""
-"","7","test_returns_empty_list_when_no_sequences","tests","2026-03-13","passed","2026-03-13","TestListSequences","test_sequences","",""
-"Head-to-head: real DB calls prove async anti-pattern is measurably slower.
-
-    This is the test to show a colleague who argues that time.sleep is artificial.
-    With a real psycopg2 pg_sleep call the result is the same: blocking the event
-    loop serialises what should be parallel work.
-    ","3667","test_async_blocking_db_is_significantly_slower_than_sync","tests.perf","2026-03-13","passed","2026-03-13","","test_db_event_loop_blocking","",""
-"","13","test_returns_all_created_sequences","tests","2026-03-13","passed","2026-03-13","TestListSequences","test_sequences","",""
-"","11","test_updates_both_fields","tests","2026-03-13","passed","2026-03-13","TestPartialUpdateSequence","test_sequences","",""
-"","12","test_sequence_no_longer_retrievable_after_delete","tests","2026-03-13","passed","2026-03-13","TestDeleteSequence","test_sequences","",""
+    ","3064","test_async_blocking_handlers_serialise_requests","tests.perf","2026-03-13","passed","2026-03-13","","test_event_loop_blocking","",""
 "sync def handlers run in the thread pool — requests execute in parallel.
 
     With 6 concurrent requests each sleeping 0.5s, the wall-clock time should
@@ -68,12 +67,13 @@
         t=0.0  req5─────┤ time
         t=0.0  req6─────┘
         t=0.5  all complete  ← total elapsed ≈ 0.5s
-    ","588","test_sync_handlers_process_requests_concurrently","tests.perf","2026-03-13","passed","2026-03-13","","test_event_loop_blocking","",""
-"Head-to-head comparison — the async anti-pattern is measurably slower.
-
-    This is the test to show a colleague who asks ""why not just make everything async?"".
-    ","3659","test_async_blocking_is_significantly_slower_than_sync","tests.perf","2026-03-13","passed","2026-03-13","","test_event_loop_blocking","",""
-"","11","test_updates_description","tests","2026-03-13","passed","2026-03-13","TestPartialUpdateSequence","test_sequences","",""
-"","10","test_empty_payload_leaves_record_unchanged","tests","2026-03-13","passed","2026-03-13","TestPartialUpdateSequence","test_sequences","",""
+    ","587","test_sync_handlers_process_requests_concurrently","tests.perf","2026-03-13","passed","2026-03-13","","test_event_loop_blocking","",""
+"","9","test_response_contains_expected_fields","tests","2026-03-13","passed","2026-03-13","TestListSequences","test_sequences","",""
+"","5","test_health_returns_ok","tests","2026-03-13","passed","2026-03-13","","test_health","",""
+"","12","test_updates_description","tests","2026-03-13","passed","2026-03-13","TestPartialUpdateSequence","test_sequences","",""
 "","6","test_creates_sequence_without_description","tests","2026-03-13","passed","2026-03-13","TestCreateSequence","test_sequences","",""
-"","4","test_returns_404_for_unknown_id","tests","2026-03-13","passed","2026-03-13","TestPartialUpdateSequence","test_sequences","",""
+"","12","test_sequence_no_longer_retrievable_after_delete","tests","2026-03-13","passed","2026-03-13","TestDeleteSequence","test_sequences","",""
+"","4","test_returns_404_for_unknown_id","tests","2026-03-13","passed","2026-03-13","TestDeleteSequence","test_sequences","",""
+"","10","test_empty_payload_leaves_record_unchanged","tests","2026-03-13","passed","2026-03-13","TestPartialUpdateSequence","test_sequences","",""
+"","2","test_returns_422_when_body_empty","tests","2026-03-13","passed","2026-03-13","TestCreateSequence","test_sequences","",""
+"","5","test_returns_404_for_unknown_id","tests","2026-03-13","passed","2026-03-13","TestRetrieveSequence","test_sequences","",""

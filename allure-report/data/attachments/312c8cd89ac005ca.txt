@@ -1,0 +1,7 @@
+2026-03-13 18:29:20,827 INFO testcontainers.core.container Pulling image testcontainers/ryuk:0.8.1
+2026-03-13 18:29:22,549 INFO testcontainers.core.container Container started: f46b682cf5f2
+2026-03-13 18:29:22,554 INFO testcontainers.core.container Pulling image postgres:16-alpine
+2026-03-13 18:29:26,516 INFO testcontainers.core.container Container started: 52906ac381bb
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> bbc32a35e8ff, initial
