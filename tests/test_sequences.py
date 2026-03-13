@@ -1,5 +1,6 @@
 """Tests for the /sequences CRUD endpoints."""
 
+import allure
 from fastapi.testclient import TestClient
 
 # ---------------------------------------------------------------------------
@@ -21,6 +22,8 @@ def _create_sequence(
 # POST /sequences/
 # ---------------------------------------------------------------------------
 
+@allure.feature("Sequences")  # pyright: ignore[reportUnknownMemberType]
+@allure.story("Create")  # pyright: ignore[reportUnknownMemberType]
 class TestCreateSequence:
     def test_creates_sequence_with_all_fields(self, client: TestClient) -> None:
         response = client.post(
@@ -58,6 +61,8 @@ class TestCreateSequence:
 # GET /sequences/
 # ---------------------------------------------------------------------------
 
+@allure.feature("Sequences")  # pyright: ignore[reportUnknownMemberType]
+@allure.story("List")  # pyright: ignore[reportUnknownMemberType]
 class TestListSequences:
     def test_returns_empty_list_when_no_sequences(self, client: TestClient) -> None:
         response = client.get("/sequences/")
@@ -89,6 +94,8 @@ class TestListSequences:
 # GET /sequences/{id}
 # ---------------------------------------------------------------------------
 
+@allure.feature("Sequences")  # pyright: ignore[reportUnknownMemberType]
+@allure.story("Retrieve")  # pyright: ignore[reportUnknownMemberType]
 class TestRetrieveSequence:
     def test_retrieves_existing_sequence(self, client: TestClient) -> None:
         created = _create_sequence(client, name="Delta")
@@ -111,6 +118,8 @@ class TestRetrieveSequence:
 # PATCH /sequences/{id}
 # ---------------------------------------------------------------------------
 
+@allure.feature("Sequences")  # pyright: ignore[reportUnknownMemberType]
+@allure.story("Partial Update")  # pyright: ignore[reportUnknownMemberType]
 class TestPartialUpdateSequence:
     def test_updates_name(self, client: TestClient) -> None:
         created = _create_sequence(client, name="Original")
@@ -167,6 +176,8 @@ class TestPartialUpdateSequence:
 # DELETE /sequences/{id}
 # ---------------------------------------------------------------------------
 
+@allure.feature("Sequences")  # pyright: ignore[reportUnknownMemberType]
+@allure.story("Delete")  # pyright: ignore[reportUnknownMemberType]
 class TestDeleteSequence:
     def test_deletes_existing_sequence(self, client: TestClient) -> None:
         created = _create_sequence(client, name="ToDelete")
@@ -177,7 +188,7 @@ class TestDeleteSequence:
         assert response.status_code == 204
         assert response.content == b""
 
-    def test_sequence_no_longer_retrievable_after_delete(  # noqa: E501
+    def test_sequence_no_longer_retrievable_after_delete(
         self, client: TestClient
     ) -> None:
         created = _create_sequence(client, name="Gone")

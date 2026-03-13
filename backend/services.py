@@ -1,5 +1,6 @@
 """Business logic for Sequence operations."""
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.models import Sequence
@@ -32,7 +33,9 @@ def list_sequences(session: Session) -> list[Sequence]:
     Returns:
         List of Sequence instances.
     """
-    return session.query(Sequence).order_by(Sequence.created_at.desc()).all()
+    return list(
+        session.execute(select(Sequence).order_by(Sequence.created_at.desc())).scalars()
+    )
 
 
 def get_sequence(session: Session, sequence_id: int) -> Sequence | None:
