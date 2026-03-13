@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from backend.database import get_session
 from backend.exceptions import handle_exception
+from backend.models import Sequence
 from backend.schemas import SequenceCreate, SequenceResponse, SequenceUpdate
 from backend.services import (
     create_sequence,
@@ -26,6 +27,31 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/sequences", tags=["sequences"])
 
 SessionDep = Annotated[Session, Depends(get_session)]
+
+
+def _get_sequence_or_404(sequence_id: int, session: SessionDep) -> Sequence:
+    """Shared dependency: fetch a Sequence by ID or raise 404.
+
+    Args:
+        sequence_id: Path parameter — primary key of the target Sequence.
+        session: Injected database session.
+
+    Returns:
+        The requested Sequence instance.
+
+    Raises:
+        HTTPException: 404 if the Sequence does not exist.
+    """
+    sequence = get_sequence(session, sequence_id)
+    if sequence is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Sequence {sequence_id} not found",
+        )
+    return sequence
+
+
+SequenceDep = Annotated[Sequence, Depends(_get_sequence_or_404)]
 
 
 @router.post(
@@ -63,73 +89,45 @@ def list_all(session: SessionDep) -> list[SequenceResponse]:
 
 @router.get("/{sequence_id}", response_model=SequenceResponse)
 @handle_exception(logger)
-def retrieve(sequence_id: int, session: SessionDep) -> SequenceResponse:
+def retrieve(sequence: SequenceDep) -> SequenceResponse:
     """Retrieve a single Sequence by ID.
 
     Args:
-        sequence_id: Primary key of the target Sequence.
-        session: Injected database session.
+        sequence: Injected Sequence instance (raises 404 if not found).
 
     Returns:
         The requested Sequence.
-
-    Raises:
-        HTTPException: 404 if the Sequence does not exist.
     """
-    sequence = get_sequence(session, sequence_id)
-    if sequence is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Sequence {sequence_id} not found",
-        )
     return SequenceResponse.model_validate(sequence)
 
 
 @router.patch("/{sequence_id}", response_model=SequenceResponse)
 @handle_exception(logger)
 def partial_update(
-    sequence_id: int,
+    sequence: SequenceDep,
     payload: SequenceUpdate,
     session: SessionDep,
 ) -> SequenceResponse:
     """Partially update a Sequence.
 
     Args:
-        sequence_id: Primary key of the target Sequence.
+        sequence: Injected Sequence instance (raises 404 if not found).
         payload: Fields to update (None values are ignored).
         session: Injected database session.
 
     Returns:
         The updated Sequence.
-
-    Raises:
-        HTTPException: 404 if the Sequence does not exist.
     """
-    sequence = get_sequence(session, sequence_id)
-    if sequence is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Sequence {sequence_id} not found",
-        )
     return SequenceResponse.model_validate(update_sequence(session, sequence, payload))
 
 
 @router.delete("/{sequence_id}", status_code=status.HTTP_204_NO_CONTENT)
 @handle_exception(logger)
-def destroy(sequence_id: int, session: SessionDep) -> None:
+def destroy(sequence: SequenceDep, session: SessionDep) -> None:
     """Delete a Sequence.
 
     Args:
-        sequence_id: Primary key of the target Sequence.
+        sequence: Injected Sequence instance (raises 404 if not found).
         session: Injected database session.
-
-    Raises:
-        HTTPException: 404 if the Sequence does not exist.
     """
-    sequence = get_sequence(session, sequence_id)
-    if sequence is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Sequence {sequence_id} not found",
-        )
     delete_sequence(session, sequence)
