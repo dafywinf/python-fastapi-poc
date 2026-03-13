@@ -6,12 +6,6 @@ on:
   pull_request:
     branches: [main]
 
-# Needed for GitHub Pages deployment
-permissions:
-  contents: write
-  pages: write
-  id-token: write
-
 jobs:
   # ── Lint & Type Check ──────────────────────────────────────────────────────
   lint:
@@ -80,7 +74,6 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost/test
         run: |
           poetry run pytest \
-            --alluredir=allure-results \
             --cov=backend \
             --cov-report=xml \
             --cov-report=term-missing
@@ -91,14 +84,6 @@ jobs:
         with:
           files: coverage.xml
         continue-on-error: true
-
-      - name: Upload Allure results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: allure-results-unit
-          path: allure-results/
-          retention-days: 7
 
   # ── Performance Tests ──────────────────────────────────────────────────────
   #
@@ -136,70 +121,4 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost/test
         run: |
-          poetry run pytest tests/perf/ -v -s -m perf \
-            --alluredir=allure-results
-
-      - name: Upload Allure results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: allure-results-perf
-          path: allure-results/
-          retention-days: 7
-
-  # ── Allure Report ──────────────────────────────────────────────────────────
-  #
-  # Merges results from both test jobs into a single HTML report.
-  #
-  # Artifact:   Downloadable from every run (retained 30 days).
-  # GitHub Pages: Deployed on pushes to main so the latest report is always
-  #               browsable at https://<org>.github.io/<repo>/allure-report/
-  #
-  # To enable Pages: Settings → Pages → Source → "GitHub Actions" (or set the
-  # source branch to gh-pages if you prefer the branch-based workflow).
-  report:
-    name: Allure Report
-    runs-on: ubuntu-latest
-    needs: [test, perf]
-    # Run even when tests fail so the report always shows what went wrong
-    if: always()
-
-    steps:
-      - name: Download unit test results
-        uses: actions/download-artifact@v4
-        with:
-          name: allure-results-unit
-          path: allure-results/
-        continue-on-error: true
-
-      - name: Download perf test results
-        uses: actions/download-artifact@v4
-        with:
-          name: allure-results-perf
-          path: allure-results/
-        continue-on-error: true
-
-      - name: Install Allure CLI
-        run: npm install -g allure-commandline --quiet
-
-      - name: Generate Allure HTML report
-        run: allure generate allure-results --clean -o allure-report
-
-      - name: Upload Allure report artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: allure-report
-          path: allure-report/
-          retention-days: 30
-
-      # Deploy the merged report to GitHub Pages on every push to main.
-      # PRs still get the downloadable artifact above — Pages is for the
-      # canonical "latest passing" view.
-      - name: Deploy to GitHub Pages
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: allure-report
-          destination_dir: allure-report
-          keep_files: false
+          poetry run pytest tests/perf/ -v -s -m perf

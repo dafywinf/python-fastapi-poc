@@ -11,6 +11,10 @@ htmlcov/
 # pytest
 .pytest_cache/
 
+# Allure (generated output — use `just test-report` / `just perf-report` locally)
+allure-results/
+allure-report/
+
 # Alembic (keep versions, ignore nothing extra)
 
 # Environment
