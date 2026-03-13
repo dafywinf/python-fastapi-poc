@@ -13,19 +13,16 @@ container, bind real ports, and take several seconds intentionally.
 
 import os
 import pathlib
+from collections.abc import Generator
 
 import allure
 import pytest
 from fastapi import Depends, FastAPI
-from sqlalchemy import create_engine, text
+from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 from testcontainers.postgres import PostgresContainer
 
-from tests.perf.test_event_loop_blocking import (
-    _fire_concurrent,
-    _start_server,
-    _stop_server,
-)
+from tests.perf.helpers import fire_concurrent, start_server, stop_server
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -50,20 +47,22 @@ def get_perf_session() -> Session:
 
 
 @sync_db_app.get("/")
-def sync_db_handler(session: Session = Depends(get_perf_session)) -> dict:
+def sync_db_handler(session: Session = Depends(get_perf_session)) -> dict[str, str]:
     """Correct pattern: def handler — FastAPI runs this in a thread pool worker."""
     session.execute(text("SELECT pg_sleep(0.5)"))
     return {"mode": "sync-db"}
 
 
 @async_blocking_db_app.get("/")
-async def async_blocking_db_handler(session: Session = Depends(get_perf_session)) -> dict:
+async def async_blocking_db_handler(  # noqa: E501
+    session: Session = Depends(get_perf_session),
+) -> dict[str, str]:
     """Anti-pattern: async def handler with a blocking psycopg2 call.
 
     session.execute() blocks the event loop thread, preventing any other
     coroutine from running until the query returns.
     """
-    session.execute(text("SELECT pg_sleep(0.5)"))  # blocks the event loop — do not do this
+    session.execute(text("SELECT pg_sleep(0.5)"))  # blocks the event loop — do not do this  # noqa: E501
     return {"mode": "async-blocking-db"}
 
 
@@ -102,11 +101,11 @@ def db_engine(pg_container: PostgresContainer):
 
 
 @pytest.fixture(scope="module")
-def sync_db_server(db_engine):
+def sync_db_server(db_engine: Engine) -> Generator[str, None, None]:
     """Start the sync-def app with a real DB session dependency."""
     _SessionLocal = sessionmaker(bind=db_engine)
 
-    def _override():
+    def _override() -> Generator[Session, None, None]:
         session = _SessionLocal()
         try:
             yield session
@@ -114,18 +113,18 @@ def sync_db_server(db_engine):
             session.close()
 
     sync_db_app.dependency_overrides[get_perf_session] = _override
-    server = _start_server(sync_db_app, SYNC_DB_PORT)
+    server = start_server(sync_db_app, SYNC_DB_PORT)
     yield f"http://127.0.0.1:{SYNC_DB_PORT}"
-    _stop_server(server)
+    stop_server(server)
     sync_db_app.dependency_overrides.clear()
 
 
 @pytest.fixture(scope="module")
-def async_blocking_db_server(db_engine):
+def async_blocking_db_server(db_engine: Engine) -> Generator[str, None, None]:
     """Start the async-def app with a real DB session dependency."""
     _SessionLocal = sessionmaker(bind=db_engine)
 
-    def _override():
+    def _override() -> Generator[Session, None, None]:
         session = _SessionLocal()
         try:
             yield session
@@ -133,9 +132,9 @@ def async_blocking_db_server(db_engine):
             session.close()
 
     async_blocking_db_app.dependency_overrides[get_perf_session] = _override
-    server = _start_server(async_blocking_db_app, ASYNC_DB_PORT)
+    server = start_server(async_blocking_db_app, ASYNC_DB_PORT)
     yield f"http://127.0.0.1:{ASYNC_DB_PORT}"
-    _stop_server(server)
+    stop_server(server)
     async_blocking_db_app.dependency_overrides.clear()
 
 
@@ -144,8 +143,8 @@ def async_blocking_db_server(db_engine):
 # ---------------------------------------------------------------------------
 
 
-@allure.feature("Performance")
-@allure.story("DB-backed event loop blocking")
+@allure.feature("Performance")  # pyright: ignore[reportUnknownMemberType]
+@allure.story("DB-backed event loop blocking")  # pyright: ignore[reportUnknownMemberType]
 @pytest.mark.perf
 def test_sync_db_handlers_process_requests_concurrently(sync_db_server: str) -> None:
     """sync def handlers run in the thread pool — DB requests execute in parallel.
@@ -162,8 +161,8 @@ def test_sync_db_handlers_process_requests_concurrently(sync_db_server: str) -> 
         t=0.0  req6─────┘
         t=0.5  all complete  ← total elapsed ≈ 0.5s
     """
-    with allure.step(f"Fire {CONCURRENT_REQUESTS} concurrent requests at sync-db server"):
-        elapsed, status_codes = _fire_concurrent(sync_db_server, CONCURRENT_REQUESTS)
+    with allure.step(f"Fire {CONCURRENT_REQUESTS} concurrent requests at sync-db server"):  # noqa: E501
+        elapsed, status_codes = fire_concurrent(sync_db_server, CONCURRENT_REQUESTS)
 
     print(f"\n[sync-db]  {CONCURRENT_REQUESTS} concurrent requests: {elapsed:.2f}s")
     print(f"           expected ≈ {PG_SLEEP}s  (parallel — thread pool)")
@@ -175,10 +174,12 @@ def test_sync_db_handlers_process_requests_concurrently(sync_db_server: str) -> 
     )
 
 
-@allure.feature("Performance")
-@allure.story("DB-backed event loop blocking")
+@allure.feature("Performance")  # pyright: ignore[reportUnknownMemberType]
+@allure.story("DB-backed event loop blocking")  # pyright: ignore[reportUnknownMemberType]
 @pytest.mark.perf
-def test_async_blocking_db_handlers_serialise_requests(async_blocking_db_server: str) -> None:
+def test_async_blocking_db_handlers_serialise_requests(  # noqa: E501
+    async_blocking_db_server: str,
+) -> None:
     """async def handlers with psycopg2 calls serialise on the event loop.
 
     The same 6 requests each running pg_sleep(0.5) now execute one at a time
@@ -190,11 +191,13 @@ def test_async_blocking_db_handlers_serialise_requests(async_blocking_db_server:
         t=1.0  req2 done, req3 starts ...
         t=2.5  req6 done  ← total elapsed ≈ 3.0s
     """
-    with allure.step(f"Fire {CONCURRENT_REQUESTS} concurrent requests at async-blocking-db server"):
-        elapsed, status_codes = _fire_concurrent(async_blocking_db_server, CONCURRENT_REQUESTS)
+    with allure.step(  # noqa: E501
+        f"Fire {CONCURRENT_REQUESTS} concurrent requests at async-blocking-db server"
+    ):
+        elapsed, status_codes = fire_concurrent(async_blocking_db_server, CONCURRENT_REQUESTS)  # noqa: E501
 
-    print(f"\n[async-blocking-db]  {CONCURRENT_REQUESTS} concurrent requests: {elapsed:.2f}s")
-    print(f"                     expected ≈ {PG_SLEEP * CONCURRENT_REQUESTS}s  (serialised)")
+    print(f"\n[async-blocking-db]  {CONCURRENT_REQUESTS} concurrent requests: {elapsed:.2f}s")  # noqa: E501
+    print(f"                     expected ≈ {PG_SLEEP * CONCURRENT_REQUESTS}s  (serialised)")  # noqa: E501
 
     assert all(s == 200 for s in status_codes), "All requests should succeed"
     assert elapsed > PG_SLEEP * (CONCURRENT_REQUESTS - 1), (
@@ -204,32 +207,32 @@ def test_async_blocking_db_handlers_serialise_requests(async_blocking_db_server:
     )
 
 
-@allure.feature("Performance")
-@allure.story("DB-backed event loop blocking")
+@allure.feature("Performance")  # pyright: ignore[reportUnknownMemberType]
+@allure.story("DB-backed event loop blocking")  # pyright: ignore[reportUnknownMemberType]
 @pytest.mark.perf
 def test_async_blocking_db_is_significantly_slower_than_sync(
     sync_db_server: str, async_blocking_db_server: str
 ) -> None:
-    """Head-to-head comparison using real DB calls — async anti-pattern is measurably slower.
+    """Head-to-head: real DB calls prove async anti-pattern is measurably slower.
 
     This is the test to show a colleague who argues that time.sleep is artificial.
     With a real psycopg2 pg_sleep call the result is the same: blocking the event
     loop serialises what should be parallel work.
     """
     with allure.step("Measure sync-db elapsed time"):
-        sync_elapsed, _ = _fire_concurrent(sync_db_server, CONCURRENT_REQUESTS)
+        sync_elapsed, _ = fire_concurrent(sync_db_server, CONCURRENT_REQUESTS)
 
     with allure.step("Measure async-blocking-db elapsed time"):
-        async_elapsed, _ = _fire_concurrent(async_blocking_db_server, CONCURRENT_REQUESTS)
+        async_elapsed, _ = fire_concurrent(async_blocking_db_server, CONCURRENT_REQUESTS)  # noqa: E501
 
     ratio = async_elapsed / sync_elapsed
 
-    print(f"\n[comparison]")
+    print("\n[comparison]")
     print(f"  sync def + pg_sleep  : {sync_elapsed:.2f}s")
     print(f"  async def + pg_sleep : {async_elapsed:.2f}s")
     print(f"  async-db is {ratio:.1f}× slower")
 
     assert ratio > (CONCURRENT_REQUESTS / 2), (
-        f"Expected async-blocking-db to be at least {CONCURRENT_REQUESTS / 2:.0f}× slower "
+        f"Expected async-blocking-db to be at least {CONCURRENT_REQUESTS / 2:.0f}× slower "  # noqa: E501
         f"than sync-db, but ratio was only {ratio:.1f}×"
     )

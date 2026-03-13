@@ -24,6 +24,11 @@ db-down:
 db-logs:
     docker compose logs -f db
 
+# Lint and type-check the codebase
+check:
+    {{venv}}/ruff check .
+    {{venv}}/basedpyright .
+
 # Run the test suite
 test:
     {{venv}}/pytest
