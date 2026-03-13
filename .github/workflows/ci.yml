@@ -1,0 +1,205 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Needed for GitHub Pages deployment
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  # ── Lint & Type Check ──────────────────────────────────────────────────────
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Cache venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install dependencies
+        run: |
+          poetry config virtualenvs.in-project true
+          poetry install
+
+      - name: Ruff
+        run: poetry run ruff check .
+
+      - name: basedpyright
+        run: poetry run basedpyright .
+
+  # ── Unit / Integration Tests ───────────────────────────────────────────────
+  test:
+    name: Unit & Integration Tests
+    runs-on: ubuntu-latest
+    needs: lint
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Cache venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install dependencies
+        run: |
+          poetry config virtualenvs.in-project true
+          poetry install
+
+      - name: Run tests
+        env:
+          # database.py reads DATABASE_URL at import time; testcontainers
+          # overrides the actual connection — this placeholder satisfies the
+          # import without connecting to anything.
+          DATABASE_URL: postgresql://postgres:postgres@localhost/test
+        run: |
+          poetry run pytest \
+            --alluredir=allure-results \
+            --cov=backend \
+            --cov-report=xml \
+            --cov-report=term-missing
+
+      - name: Upload coverage
+        if: always()
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+        continue-on-error: true
+
+      - name: Upload Allure results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-unit
+          path: allure-results/
+          retention-days: 7
+
+  # ── Performance Tests ──────────────────────────────────────────────────────
+  #
+  # These tests are intentionally slow — they prove that async def + blocking
+  # I/O serialises requests whereas sync def runs them in parallel.  They use
+  # real ports (18001-18004) and a testcontainers PostgreSQL instance, both of
+  # which are available on ubuntu-latest runners.
+  perf:
+    name: Performance Tests
+    runs-on: ubuntu-latest
+    needs: lint
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Cache venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install dependencies
+        run: |
+          poetry config virtualenvs.in-project true
+          poetry install
+
+      - name: Run performance tests
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost/test
+        run: |
+          poetry run pytest tests/perf/ -v -s -m perf \
+            --alluredir=allure-results
+
+      - name: Upload Allure results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-perf
+          path: allure-results/
+          retention-days: 7
+
+  # ── Allure Report ──────────────────────────────────────────────────────────
+  #
+  # Merges results from both test jobs into a single HTML report.
+  #
+  # Artifact:   Downloadable from every run (retained 30 days).
+  # GitHub Pages: Deployed on pushes to main so the latest report is always
+  #               browsable at https://<org>.github.io/<repo>/allure-report/
+  #
+  # To enable Pages: Settings → Pages → Source → "GitHub Actions" (or set the
+  # source branch to gh-pages if you prefer the branch-based workflow).
+  report:
+    name: Allure Report
+    runs-on: ubuntu-latest
+    needs: [test, perf]
+    # Run even when tests fail so the report always shows what went wrong
+    if: always()
+
+    steps:
+      - name: Download unit test results
+        uses: actions/download-artifact@v4
+        with:
+          name: allure-results-unit
+          path: allure-results/
+        continue-on-error: true
+
+      - name: Download perf test results
+        uses: actions/download-artifact@v4
+        with:
+          name: allure-results-perf
+          path: allure-results/
+        continue-on-error: true
+
+      - name: Install Allure CLI
+        run: npm install -g allure-commandline --quiet
+
+      - name: Generate Allure HTML report
+        run: allure generate allure-results --clean -o allure-report
+
+      - name: Upload Allure report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report
+          path: allure-report/
+          retention-days: 30
+
+      # Deploy the merged report to GitHub Pages on every push to main.
+      # PRs still get the downloadable artifact above — Pages is for the
+      # canonical "latest passing" view.
+      - name: Deploy to GitHub Pages
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: allure-report
+          destination_dir: allure-report
+          keep_files: false
