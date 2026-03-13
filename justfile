@@ -36,6 +36,11 @@ check:
 test:
     {{venv}}/pytest
 
+# Run tests and open the Allure report
+test-report:
+    {{venv}}/pytest --alluredir=allure-results
+    allure serve allure-results
+
 # Run tests with a terminal coverage report
 test-cov:
     {{venv}}/pytest --cov=backend --cov-report=term-missing
