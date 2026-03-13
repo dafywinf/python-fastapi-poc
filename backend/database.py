@@ -1,17 +1,13 @@
 """Database engine and session configuration."""
 
-import os
 from collections.abc import Generator
 
-from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
-load_dotenv()
+from backend.config import settings
 
-DATABASE_URL: str = os.environ["DATABASE_URL"]
-
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+engine = create_engine(settings.database_url, pool_pre_ping=True)
 
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 

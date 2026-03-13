@@ -3,23 +3,23 @@
 import os
 from logging.config import fileConfig
 
-from dotenv import load_dotenv
 from sqlalchemy import engine_from_config, pool
 
 # Import models so Alembic's autogenerate can detect them.
 import backend.models  # noqa: F401
 from alembic import context
+from backend.config import settings
 from backend.database import Base
-
-load_dotenv()
 
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Override the URL from the environment so alembic.ini never holds credentials.
-config.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"])
+# Prefer a DATABASE_URL set in the process environment (e.g. by pytest
+# conftest.py pointing at a testcontainers instance) over the value baked
+# into the settings singleton at import time.
+config.set_main_option("sqlalchemy.url", os.environ.get("DATABASE_URL") or settings.database_url)
 
 target_metadata = Base.metadata
 
