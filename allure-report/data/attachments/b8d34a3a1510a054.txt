@@ -1,0 +1,4 @@
+INFO     testcontainers.core.container:container.py:177 Pulling image testcontainers/ryuk:0.8.1
+INFO     testcontainers.core.container:container.py:206 Container started: e3767a5d244f
+INFO     testcontainers.core.container:container.py:177 Pulling image postgres:16-alpine
+INFO     testcontainers.core.container:container.py:206 Container started: 8486c9139441

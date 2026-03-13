@@ -1,0 +1,10 @@
+INFO     testcontainers.core.container:container.py:177 Pulling image testcontainers/ryuk:0.8.1
+INFO     testcontainers.core.container:container.py:206 Container started: afc29678c203
+INFO     testcontainers.core.container:container.py:177 Pulling image postgres:16-alpine
+INFO     testcontainers.core.container:container.py:206 Container started: 2b9f2f4efc03
+INFO     httpx:_client.py:1025 HTTP Request: GET http://127.0.0.1:18003 "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1025 HTTP Request: GET http://127.0.0.1:18003 "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1025 HTTP Request: GET http://127.0.0.1:18003 "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1025 HTTP Request: GET http://127.0.0.1:18003 "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1025 HTTP Request: GET http://127.0.0.1:18003 "HTTP/1.1 200 OK"
+INFO     httpx:_client.py:1025 HTTP Request: GET http://127.0.0.1:18003 "HTTP/1.1 200 OK"
