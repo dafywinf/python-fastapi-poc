@@ -142,6 +142,14 @@ curl -X POST http://localhost:8000/sequences/ \
 
 ---
 
+## Further Reading
+
+| Document | Description |
+|----------|-------------|
+| [Python Toolchain](docs/python-toolchain.md) | How pyenv, Poetry, `.venv`, and your IDE relate — including what each command writes to your machine |
+
+---
+
 ## Architecture Notes
 
 - **Sync-first**: Handlers use `def` (not `async def`) so FastAPI offloads them to its external thread pool, keeping the event loop free from blocking I/O.
