@@ -19,12 +19,12 @@ python-dotenv = "^1.0.0"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.8.0"
-mypy = "^1.13.0"
 pytest = "^8.3.0"
 pytest-cov = "^6.0.0"
 httpx = "^0.28.0"
 allure-pytest = "^2.13.0"
 testcontainers = {extras = ["postgres"], version = "^4.14.1"}
+basedpyright = "^1.38.2"
 
 [tool.ruff]
 line-length = 88
@@ -32,9 +32,9 @@ line-length = 88
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
 
-[tool.mypy]
-strict = true
-python_version = "3.12"
+[tool.basedpyright]
+typeCheckingMode = "strict"
+pythonVersion = "3.12"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
