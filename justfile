@@ -32,6 +32,10 @@ test:
 test-cov:
     {{venv}}/pytest --cov=backend --cov-report=term-missing
 
+# Run performance/timing tests (demonstrates event loop blocking anti-pattern)
+perf:
+    {{venv}}/pytest tests/perf/ -v -s -m perf
+
 # Start DB, wait for healthy, then run migrations
 bootstrap: db-up
     #!/usr/bin/env bash
