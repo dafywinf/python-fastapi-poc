@@ -1,82 +1,64 @@
-  5 ## Global Standards
-  6
-  7 @.claude/standards/\_INDEX.md
-  8
- 13 ## External Skills
- 14
- 16 - **Python:** `fullstack-dev-skills:python-pro` for general implementation.dhou
+# Project Instructions
 
+## Global Standards
 
-🎯 Objective
-Create a "Hello World" style FastAPI application for managing a Sequence entity. This project is designed for a synchronous, threaded architecture (Python 3.12) and uses Alembic for database versioning.
+@.claude/standards/GIT_STANDARDS.md
+@.claude/standards/PYTHON_STANDARDS.md
 
-🛠 Tech Stack
-Framework: FastAPI
+## External Skills
 
-Python Version: 3.12 (using UK English naming conventions)
+- **Python:** `fullstack-dev-skills:python-pro` for general implementation
+- **FastAPI:** `fullstack-dev-skills:fastapi-expert` for endpoint and schema work
 
-Version Management: pyenv (via .python-version file)
+## Tech Stack
 
-Dependency Management: Poetry (configured for in-project .venv)
+- **Framework:** FastAPI (sync, threaded — use `def` not `async def`)
+- **Python:** 3.12 via pyenv (`.python-version`)
+- **Dependencies:** Poetry with in-project `.venv`
+- **Database:** PostgreSQL via psycopg2-binary
+- **ORM:** SQLAlchemy (synchronous sessions)
+- **Migrations:** Alembic (`backend/models.py` is the source of truth)
+- **Task runner:** `just` (see `justfile`)
 
-Database: PostgreSQL with psycopg2-binary
+## Architectural Rules
 
-ORM: SQLAlchemy (Synchronous Session management)
+- **Sync-first:** Route handlers use `def` so FastAPI offloads them to its external thread pool, keeping the event loop free from blocking I/O.
+- **Dependency injection:** `get_session` manages the SQLAlchemy session lifecycle (Unit of Work pattern). Override it in tests — never hit a real DB in tests.
+- **Exception handling:** Decorate handlers with `@handle_exception(logger)` to ensure full tracebacks are captured via `logger.exception`.
+- **Environment:** `.venv` must live inside the project directory (`poetry config virtualenvs.in-project true`).
 
-Migrations: Alembic (The "Liquibase" of Python)
+## Database Schema
 
-Command Runner: just (via a justfile)
+Table: `sequences`
 
-🏗 Architectural Rules
-Sync-First (Threaded): Use standard def for route handlers (not async def). This allows FastAPI to utilize its external thread pool for blocking database I/O, preventing Event Loop congestion.
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | Integer | Primary key |
+| `name` | String | Required |
+| `description` | String | Nullable |
+| `created_at` | DateTime | Server default `now()` |
 
-Dependency Injection: Implement a get_session dependency to manage the SQLAlchemy session lifecycle (Unit of Work pattern).
+## Project Structure
 
-Explicit Exception Handling: Include a decorator @handle_exception(logger) that uses logger.exception() to ensure full tracebacks are captured in logs.
-
-Environment Isolation: The Poetry virtual environment must be stored locally in a .venv folder within the project directory.
-
-📜 Database Schema (Alembic)
-Table Name: sequences
-
-Columns: - id: Integer (Primary Key)
-
-name: String (Required)
-
-description: String (Nullable)
-
-created_at: DateTime (Server Default)
-
-🚀 Justfile Commands
-just dev: Runs uvicorn backend.main:app --reload
-
-just migrate: Runs alembic upgrade head
-
-just makemigrations "message": Runs alembic revision --autogenerate -m "message"
-
-📂 Project Structure
-Plaintext
+```
 .
-├── alembic/            # Migration environment & env.py
+├── alembic/            # Migration environment & versions
 ├── backend/
-│   ├── main.py         # Entry point & Exception decorators
-│   ├── models.py       # SQLAlchemy models (Source of Truth)
-│   ├── schemas.py      # Pydantic models (DTOs)
-│   ├── database.py     # Engine & SessionLocal setup
-│   ├── routes.py       # API Controllers (using def)
-│   └── services.py     # Business logic
-├── .env                # Database credentials
-├── .python-version     # Set to 3.12
-├── alembic.ini         # Alembic configuration
-├── justfile            # Task automation
-└── pyproject.toml      # Poetry dependencies
-📋 README Requirements
-The generated README.md must include a "Getting Started" section with:
-
-macOS Setup: brew install pyenv poetry just
-
-Python Install: pyenv install $(cat .python-version)
-
-Poetry Config: poetry config virtualenvs.in-project true (to force local .venv)
-
-Project Install: poetry install
+│   ├── main.py         # App entry point & logging config
+│   ├── models.py       # SQLAlchemy models (source of truth)
+│   ├── schemas.py      # Pydantic V2 DTOs
+│   ├── database.py     # Engine & session factory
+│   ├── routes.py       # API route handlers (sync def)
+│   ├── services.py     # Business logic
+│   └── exceptions.py   # Exception handling decorator
+├── tests/
+│   ├── conftest.py     # Fixtures — in-memory SQLite, TestClient
+│   ├── test_health.py
+│   └── test_sequences.py
+├── .env                # Database credentials (not committed)
+├── .python-version     # pyenv version pin
+├── alembic.ini
+├── docker-compose.yml  # PostgreSQL service
+├── justfile            # Task runner
+└── pyproject.toml
+```
