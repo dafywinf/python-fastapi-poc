@@ -1,0 +1,187 @@
+"""Tests for the /sequences CRUD endpoints."""
+
+import pytest
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _create_sequence(client, name: str = "Alpha", description: str | None = "desc") -> dict:
+    """POST a sequence and return the parsed response body."""
+    response = client.post("/sequences/", json={"name": name, "description": description})
+    assert response.status_code == 201
+    return response.json()
+
+
+# ---------------------------------------------------------------------------
+# POST /sequences/
+# ---------------------------------------------------------------------------
+
+class TestCreateSequence:
+    def test_creates_sequence_with_all_fields(self, client):
+        response = client.post(
+            "/sequences/",
+            json={"name": "Alpha", "description": "My description"},
+        )
+
+        assert response.status_code == 201
+        body = response.json()
+        assert body["name"] == "Alpha"
+        assert body["description"] == "My description"
+        assert "id" in body
+        assert "created_at" in body
+
+    def test_creates_sequence_without_description(self, client):
+        response = client.post("/sequences/", json={"name": "Beta"})
+
+        assert response.status_code == 201
+        body = response.json()
+        assert body["name"] == "Beta"
+        assert body["description"] is None
+
+    def test_returns_422_when_name_missing(self, client):
+        response = client.post("/sequences/", json={"description": "no name"})
+
+        assert response.status_code == 422
+
+    def test_returns_422_when_body_empty(self, client):
+        response = client.post("/sequences/", json={})
+
+        assert response.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# GET /sequences/
+# ---------------------------------------------------------------------------
+
+class TestListSequences:
+    def test_returns_empty_list_when_no_sequences(self, client):
+        response = client.get("/sequences/")
+
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_returns_all_created_sequences(self, client):
+        _create_sequence(client, name="Alpha")
+        _create_sequence(client, name="Beta")
+
+        response = client.get("/sequences/")
+
+        assert response.status_code == 200
+        names = {s["name"] for s in response.json()}
+        assert names == {"Alpha", "Beta"}
+
+    def test_response_contains_expected_fields(self, client):
+        _create_sequence(client, name="Gamma")
+
+        body = client.get("/sequences/").json()
+
+        assert len(body) == 1
+        keys = set(body[0].keys())
+        assert keys == {"id", "name", "description", "created_at"}
+
+
+# ---------------------------------------------------------------------------
+# GET /sequences/{id}
+# ---------------------------------------------------------------------------
+
+class TestRetrieveSequence:
+    def test_retrieves_existing_sequence(self, client):
+        created = _create_sequence(client, name="Delta")
+        sequence_id = created["id"]
+
+        response = client.get(f"/sequences/{sequence_id}")
+
+        assert response.status_code == 200
+        assert response.json()["id"] == sequence_id
+        assert response.json()["name"] == "Delta"
+
+    def test_returns_404_for_unknown_id(self, client):
+        response = client.get("/sequences/99999")
+
+        assert response.status_code == 404
+        assert "99999" in response.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# PATCH /sequences/{id}
+# ---------------------------------------------------------------------------
+
+class TestPartialUpdateSequence:
+    def test_updates_name(self, client):
+        created = _create_sequence(client, name="Original")
+        sequence_id = created["id"]
+
+        response = client.patch(f"/sequences/{sequence_id}", json={"name": "Updated"})
+
+        assert response.status_code == 200
+        assert response.json()["name"] == "Updated"
+        assert response.json()["description"] == created["description"]
+
+    def test_updates_description(self, client):
+        created = _create_sequence(client, name="Stable", description="old")
+        sequence_id = created["id"]
+
+        response = client.patch(f"/sequences/{sequence_id}", json={"description": "new"})
+
+        assert response.status_code == 200
+        assert response.json()["description"] == "new"
+        assert response.json()["name"] == "Stable"
+
+    def test_updates_both_fields(self, client):
+        created = _create_sequence(client, name="Old", description="old desc")
+        sequence_id = created["id"]
+
+        response = client.patch(
+            f"/sequences/{sequence_id}",
+            json={"name": "New", "description": "new desc"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["name"] == "New"
+        assert response.json()["description"] == "new desc"
+
+    def test_empty_payload_leaves_record_unchanged(self, client):
+        created = _create_sequence(client, name="Unchanged", description="same")
+        sequence_id = created["id"]
+
+        response = client.patch(f"/sequences/{sequence_id}", json={})
+
+        assert response.status_code == 200
+        assert response.json()["name"] == "Unchanged"
+        assert response.json()["description"] == "same"
+
+    def test_returns_404_for_unknown_id(self, client):
+        response = client.patch("/sequences/99999", json={"name": "Ghost"})
+
+        assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# DELETE /sequences/{id}
+# ---------------------------------------------------------------------------
+
+class TestDeleteSequence:
+    def test_deletes_existing_sequence(self, client):
+        created = _create_sequence(client, name="ToDelete")
+        sequence_id = created["id"]
+
+        response = client.delete(f"/sequences/{sequence_id}")
+
+        assert response.status_code == 204
+        assert response.content == b""
+
+    def test_sequence_no_longer_retrievable_after_delete(self, client):
+        created = _create_sequence(client, name="Gone")
+        sequence_id = created["id"]
+
+        client.delete(f"/sequences/{sequence_id}")
+        response = client.get(f"/sequences/{sequence_id}")
+
+        assert response.status_code == 404
+
+    def test_returns_404_for_unknown_id(self, client):
+        response = client.delete("/sequences/99999")
+
+        assert response.status_code == 404
