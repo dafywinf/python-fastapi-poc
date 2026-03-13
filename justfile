@@ -46,6 +46,11 @@ test-cov:
     {{venv}}/pytest --cov=backend --cov-report=term-missing
 
 # Run performance/timing tests (demonstrates event loop blocking anti-pattern)
+perf-report:
+    {{venv}}/pytest tests/perf/ -v -s -m perf --alluredir=allure-results
+    allure serve allure-results
+
+# Run performance/timing tests without report
 perf:
     {{venv}}/pytest tests/perf/ -v -s -m perf
 
