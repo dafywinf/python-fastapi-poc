@@ -38,7 +38,10 @@ python_version = "3.12"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-v"
+addopts = "-v --ignore=tests/perf"
+markers = [
+    "perf: performance/timing tests (run with: just perf)",
+]
 
 [build-system]
 requires = ["poetry-core"]

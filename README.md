@@ -74,6 +74,9 @@ just test
 
 # Run with a coverage report
 just test-cov
+
+# Run performance tests (binds real ports, takes ~20s, requires Docker)
+just perf
 ```
 
 ---
@@ -85,6 +88,7 @@ just test-cov
 | `just dev` | Start the development server with hot-reload |
 | `just test` | Run the test suite |
 | `just test-cov` | Run tests with a terminal coverage report |
+| `just perf` | Run performance tests (event-loop blocking demo, requires Docker) |
 | `just bootstrap` | Start the DB container and apply all migrations |
 | `just migrate` | Apply pending Alembic migrations |
 | `just makemigrations "message"` | Generate a new migration from model changes |
@@ -131,7 +135,8 @@ curl -X POST http://localhost:8000/sequences/ \
 ├── tests/
 │   ├── conftest.py     # Shared fixtures (in-memory DB, TestClient)
 │   ├── test_health.py
-│   └── test_sequences.py
+│   ├── test_sequences.py
+│   └── perf/           # Performance tests (excluded from just test)
 ├── .env                # Database credentials (not committed)
 ├── .python-version     # Python version for pyenv
 ├── alembic.ini         # Alembic configuration
