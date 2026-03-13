@@ -8,37 +8,39 @@ back on teardown to keep tests fully isolated.
 
 import os
 import pathlib
+from collections.abc import Generator
 
 import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import Engine, create_engine
+from sqlalchemy.orm import Session
+from testcontainers.postgres import PostgresContainer
+
+from alembic import command
+from alembic.config import Config
+from backend.database import get_session
+from backend.main import app
 
 # Docker Desktop on macOS uses a non-standard socket — set DOCKER_HOST so
 # testcontainers can find the daemon without manual environment setup.
 _docker_sock = pathlib.Path.home() / ".docker/run/docker.sock"
 if _docker_sock.exists() and not os.environ.get("DOCKER_HOST"):
     os.environ["DOCKER_HOST"] = f"unix://{_docker_sock}"
-from alembic import command
-from alembic.config import Config
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from testcontainers.postgres import PostgresContainer
-
-from backend.database import get_session
-from backend.main import app
 
 POSTGRES_IMAGE = "postgres:16-alpine"
 
 
 @pytest.fixture(scope="session")
-def postgres_container():
+def postgres_container() -> Generator[PostgresContainer, None, None]:
     """Start a PostgreSQL container for the entire test session."""
     with PostgresContainer(POSTGRES_IMAGE) as container:
         yield container
 
 
 @pytest.fixture(scope="session")
-def engine(postgres_container):
+def engine(postgres_container: PostgresContainer) -> Generator[Engine, None, None]:
     """Create a SQLAlchemy engine and apply Alembic migrations once."""
-    database_url = postgres_container.get_connection_url()
+    database_url: str = postgres_container.get_connection_url()  # pyright: ignore[reportUnknownMemberType]
 
     # testcontainers returns a psycopg2+asyncpg URL — normalise to psycopg2
     database_url = database_url.replace("postgresql+psycopg2://", "postgresql://")
@@ -61,15 +63,13 @@ def engine(postgres_container):
 
 
 @pytest.fixture()
-def db_session(engine):
+def db_session(engine: Engine) -> Generator[Session, None, None]:
     """Wrap each test in a transaction that is rolled back after the test.
 
     Uses join_transaction_mode="create_savepoint" so that service-layer
     session.commit() calls only release a SAVEPOINT rather than committing
     the outer transaction, keeping each test fully isolated.
     """
-    from sqlalchemy.orm import Session
-
     connection = engine.connect()
     transaction = connection.begin()
     session = Session(bind=connection, join_transaction_mode="create_savepoint")
@@ -82,10 +82,10 @@ def db_session(engine):
 
 
 @pytest.fixture()
-def client(db_session):
+def client(db_session: Session) -> Generator[TestClient, None, None]:
     """Return a TestClient with the get_session dependency overridden."""
 
-    def override_get_session():
+    def override_get_session() -> Generator[Session, None, None]:
         try:
             yield db_session
         finally:

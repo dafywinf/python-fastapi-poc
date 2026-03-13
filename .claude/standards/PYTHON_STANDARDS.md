@@ -21,7 +21,7 @@
 ## Tooling
 
 - Dependency management: `venv` + `pip`. (See project CLAUDE.md for the venv location.)
-- Static Analysis: Run `basedpyright backend/` before finalizing any PR.
+- Static Analysis: Run `basedpyright .` before finalizing any PR.
 
 ## Virtual Environment Execution
 

@@ -28,6 +28,7 @@ basedpyright = "^1.38.2"
 
 [tool.ruff]
 line-length = 88
+exclude = ["alembic"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
@@ -35,6 +36,9 @@ select = ["E", "F", "I", "UP"]
 [tool.basedpyright]
 typeCheckingMode = "strict"
 pythonVersion = "3.12"
+reportMissingTypeStubs = "none"
+reportUntypedFunctionDecorator = "none"
+exclude = ["alembic", ".venv"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
