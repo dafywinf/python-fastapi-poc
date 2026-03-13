@@ -25,18 +25,18 @@ db-logs:
     docker compose logs -f db
 
 # Run all checks required before raising a PR
-ci: check test
+ci: check test perf
 
 # Lint and type-check the codebase
 check:
     {{venv}}/ruff check .
     {{venv}}/basedpyright .
 
-# Run the test suite
+# Run the test suite (always writes Allure results)
 test:
-    {{venv}}/pytest
+    {{venv}}/pytest --alluredir=allure-results
 
-# Run tests and open the Allure report
+# Run tests and open the Allure report in a browser
 test-report:
     {{venv}}/pytest --alluredir=allure-results
     allure serve allure-results
@@ -45,14 +45,14 @@ test-report:
 test-cov:
     {{venv}}/pytest --cov=backend --cov-report=term-missing
 
-# Run performance/timing tests (demonstrates event loop blocking anti-pattern)
+# Run performance/timing tests (always writes Allure results)
+perf:
+    {{venv}}/pytest tests/perf/ -v -s -m perf --alluredir=allure-results
+
+# Run performance/timing tests and open the Allure report in a browser
 perf-report:
     {{venv}}/pytest tests/perf/ -v -s -m perf --alluredir=allure-results
     allure serve allure-results
-
-# Run performance/timing tests without report
-perf:
-    {{venv}}/pytest tests/perf/ -v -s -m perf
 
 # Start DB, wait for healthy, then run migrations
 bootstrap: db-up
