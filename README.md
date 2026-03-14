@@ -1,6 +1,6 @@
 # python-fastapi-poc
 
-A FastAPI application for managing **Sequence** entities — synchronous, threaded architecture using FastAPI + SQLAlchemy + PostgreSQL + Alembic, with Prometheus + Grafana observability.
+A FastAPI application for managing **Sequence** entities — synchronous, threaded architecture using FastAPI + SQLAlchemy + PostgreSQL + Alembic, with a full Prometheus + Loki + Grafana observability stack (metrics, logs, dashboards).
 
 ---
 
@@ -40,7 +40,13 @@ The `.env` file is pre-configured for the Docker Compose database:
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/sequences_db
 ```
 
-Edit `.env` if you need different credentials or a remote host.
+To enable Loki log shipping, uncomment `LOKI_URL` in `.env` **after** starting the monitoring stack:
+
+```env
+LOKI_URL=http://localhost:3100
+```
+
+Leave `LOKI_URL` unset (the default) to disable log shipping — the app and all tests start cleanly without it.
 
 ### 6. Start all platform services and run migrations
 
@@ -49,7 +55,7 @@ just platform-up
 just bootstrap
 ```
 
-`platform-up` starts PostgreSQL, Prometheus, and Grafana. `bootstrap` waits for the database to be healthy then applies all Alembic migrations.
+`platform-up` starts PostgreSQL, Prometheus, Loki, and Grafana. `bootstrap` waits for the database to be healthy then applies all Alembic migrations.
 
 ### 7. Start the development server
 
@@ -64,7 +70,8 @@ just dev
 | <http://localhost:8000/health> | Liveness check |
 | <http://localhost:8000/metrics> | Prometheus metrics |
 | <http://localhost:9090> | Prometheus |
-| <http://localhost:3000> | Grafana (anonymous viewer, no login) |
+| <http://localhost:3100/ready> | Loki readiness check |
+| <http://localhost:3000> | Grafana (admin / admin) |
 
 ---
 
@@ -92,9 +99,10 @@ just perf
 | `just dev` | Start the development server with hot-reload |
 | `just platform-up` | Start all platform services (DB + Prometheus + Grafana) |
 | `just platform-down` | Stop all platform services |
-| `just obs-up` | Start Prometheus and Grafana only |
-| `just obs-down` | Stop Prometheus and Grafana |
-| `just obs-logs` | Tail monitoring container logs |
+| `just obs-up` | Start Prometheus, Loki, and Grafana only |
+| `just obs-down` | Stop Prometheus, Loki, and Grafana |
+| `just obs-logs` | Tail all monitoring container logs |
+| `just loki-logs` | Tail Loki container logs only |
 | `just test` | Run the test suite |
 | `just test-cov` | Run tests with a terminal coverage report |
 | `just perf` | Run performance tests (event-loop blocking demo, requires Docker) |
@@ -104,7 +112,7 @@ just perf
 | `just db-up` | Start the PostgreSQL container |
 | `just db-down` | Stop and remove all containers |
 | `just db-logs` | Tail PostgreSQL container logs |
-| `just ci` | Full pre-PR gate: lint + type-check + tests + perf |
+| `just ci` | Full pre-PR gate: lint + type-check + tests + perf + e2e (requires platform-up + dev) |
 
 ---
 
@@ -152,7 +160,8 @@ curl -X POST http://localhost:8000/sequences/ \
 │       │   ├── datasources/        # Auto-provisions Prometheus datasource
 │       │   └── dashboards/         # Points Grafana at dashboard JSON dir
 │       └── dashboards/
-│           └── fastapi.json        # FastAPI Observability dashboard (ID 16110)
+│           ├── fastapi.json        # FastAPI Observability dashboard (RED metrics)
+│           └── loki.json           # FastAPI Logs dashboard (LogQL)
 ├── tests/
 │   ├── conftest.py     # Fixtures — testcontainers PostgreSQL, savepoint isolation, TestClient
 │   ├── test_health.py
@@ -165,7 +174,7 @@ curl -X POST http://localhost:8000/sequences/ \
 ├── .env                # Database credentials (not committed)
 ├── .python-version     # pyenv version pin
 ├── alembic.ini
-├── docker-compose.yml  # PostgreSQL, Prometheus, Grafana (monitoring profile)
+├── docker-compose.yml  # PostgreSQL, Prometheus, Loki, Grafana (monitoring profile)
 ├── justfile            # Task runner — use `just ci` as pre-PR gate
 └── pyproject.toml
 ```
@@ -187,4 +196,4 @@ curl -X POST http://localhost:8000/sequences/ \
 - **Real DB in tests**: Tests run against a real PostgreSQL container via `testcontainers` — no SQLite, no mocking the database layer.
 - **Exception handling**: `@handle_exception(logger)` captures full tracebacks via `logger.exception`.
 - **Migrations**: Alembic autogenerate — edit `backend/models.py`, then run `just makemigrations "describe change"` followed by `just migrate`.
-- **Observability**: `prometheus-fastapi-instrumentator` exposes RED metrics at `/metrics`. Prometheus scrapes every 15s; the FastAPI Observability Grafana dashboard (ID 16110) is pre-provisioned.
+- **Observability**: `prometheus-fastapi-instrumentator` exposes RED metrics at `/metrics`. Prometheus scrapes every 15s; the FastAPI Observability dashboard is pre-provisioned. Structured JSON logs are shipped directly to Loki via `python-logging-loki` and queryable in the FastAPI Logs Grafana dashboard.

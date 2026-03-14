@@ -34,7 +34,8 @@ db-logs:
     docker compose logs -f db
 
 # Run all checks required before raising a PR
-ci: check test perf
+# Requires: just platform-up && just dev running in a separate terminal
+ci: check test perf e2e
 
 # Lint and type-check the codebase
 check:
@@ -78,6 +79,10 @@ obs-down:
 # Tail logs from monitoring containers
 obs-logs:
     docker compose --profile monitoring logs -f
+
+# Tail logs from the Loki container
+loki-logs:
+    docker compose --profile monitoring logs -f loki
 
 # Start DB, wait for healthy, then run migrations
 bootstrap: db-up

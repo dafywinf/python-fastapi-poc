@@ -8,9 +8,11 @@ class Settings(BaseSettings):
 
     Attributes:
         database_url: PostgreSQL connection string.
+        loki_url: Base URL of the Loki push API. None disables log shipping.
     """
 
     database_url: str
+    loki_url: str | None = None
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

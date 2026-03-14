@@ -104,7 +104,8 @@ class TestCreateSequence:
 Run **one command** before every commit and before raising a PR:
 
 ```bash
-just ci   # ruff + basedpyright + pytest (unit/integration with allure) + perf tests (with allure)
+just ci   # ruff + basedpyright + pytest (unit/integration with allure) + perf tests + e2e tests (with allure)
+          # Precondition: just platform-up && just dev must be running
 ```
 
 Never invoke the underlying tools (`ruff`, `basedpyright`, `pytest`) directly — use `just` so the recipes stay in sync.

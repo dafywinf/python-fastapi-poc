@@ -26,11 +26,23 @@ services:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
+  loki:
+    profiles: [monitoring]
+    image: grafana/loki:3.3.2
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./monitoring/loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    restart: unless-stopped
+
   grafana:
     profiles: [monitoring]
     image: grafana/grafana:11.2.0
     depends_on:
       - prometheus
+      - loki
     volumes:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
@@ -48,3 +60,4 @@ services:
 volumes:
   postgres_data:
   grafana_data:
+  loki_data:
