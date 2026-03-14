@@ -54,9 +54,19 @@ Table: `sequences`
 │   ├── routes.py       # API route handlers (sync def)
 │   ├── services.py     # Business logic
 │   └── exceptions.py   # Exception handling decorator
+├── monitoring/
+│   ├── prometheus/
+│   │   └── prometheus.yml          # Scrape config (targets host:8000)
+│   └── grafana/
+│       ├── provisioning/
+│       │   ├── datasources/        # Auto-provisions Prometheus datasource
+│       │   └── dashboards/         # Points Grafana at dashboard JSON dir
+│       └── dashboards/
+│           └── fastapi.json        # FastAPI Observability dashboard (ID 16110)
 ├── tests/
 │   ├── conftest.py     # Fixtures — testcontainers PostgreSQL, savepoint isolation, TestClient
 │   ├── test_health.py
+│   ├── test_metrics.py
 │   ├── test_sequences.py
 │   └── perf/           # Performance tests (marked perf, excluded from default run)
 │       ├── helpers.py
@@ -65,7 +75,7 @@ Table: `sequences`
 ├── .env                # Database credentials (not committed)
 ├── .python-version     # pyenv version pin
 ├── alembic.ini
-├── docker-compose.yml  # PostgreSQL service
+├── docker-compose.yml  # PostgreSQL, Prometheus, Grafana (monitoring profile)
 ├── justfile            # Task runner — use `just ci` as pre-PR gate
 └── pyproject.toml
 ```

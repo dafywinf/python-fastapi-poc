@@ -12,6 +12,15 @@ migrate:
 makemigrations message:
     {{venv}}/alembic revision --autogenerate -m "{{message}}"
 
+# Start all platform services (database + monitoring)
+platform-up:
+    docker compose up -d db
+    docker compose --profile monitoring up -d
+
+# Stop all platform services (database + monitoring)
+platform-down:
+    docker compose --profile monitoring down
+
 # Start the PostgreSQL container in the background
 db-up:
     docker compose up -d db
@@ -53,6 +62,22 @@ perf:
 perf-report:
     {{venv}}/pytest tests/perf/ -v -s -m perf --alluredir=allure-results
     allure serve allure-results
+
+# Run end-to-end tests against the live stack (requires just platform-up and just dev)
+e2e:
+    {{venv}}/pytest tests/e2e/ -v -s -m e2e --alluredir=allure-results
+
+# Start Prometheus and Grafana monitoring services
+obs-up:
+    docker compose --profile monitoring up -d
+
+# Stop and remove Prometheus and Grafana monitoring services
+obs-down:
+    docker compose --profile monitoring down
+
+# Tail logs from monitoring containers
+obs-logs:
+    docker compose --profile monitoring logs -f
 
 # Start DB, wait for healthy, then run migrations
 bootstrap: db-up

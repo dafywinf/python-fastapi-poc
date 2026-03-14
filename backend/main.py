@@ -4,6 +4,7 @@ import logging
 import logging.config
 
 from fastapi import FastAPI
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from backend.routes import router
 
@@ -31,6 +32,8 @@ app = FastAPI(
     description="A simple FastAPI application for managing Sequence entities.",
     version="0.1.0",
 )
+
+Instrumentator().instrument(app).expose(app)  # pyright: ignore[reportUnknownMemberType]
 
 app.include_router(router)
 

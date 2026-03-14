@@ -15,6 +15,7 @@ alembic = "^1.14.0"
 psycopg2-binary = "^2.9.0"
 pydantic = "^2.10.0"
 pydantic-settings = "^2.6.0"
+prometheus-fastapi-instrumentator = "^7.1"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.8.0"
@@ -24,6 +25,7 @@ httpx = "^0.28.0"
 allure-pytest = "^2.13.0"
 testcontainers = {extras = ["postgres"], version = "^4.14.1"}
 basedpyright = "^1.38.2"
+playwright = "^1.58.0"
 
 [tool.ruff]
 line-length = 88
@@ -42,9 +44,10 @@ exclude = ["alembic", ".venv"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-v --ignore=tests/perf"
+addopts = "-v --ignore=tests/perf --ignore=tests/e2e"
 markers = [
     "perf: performance/timing tests (run with: just perf)",
+    "e2e: end-to-end tests against a live running stack (run with: just e2e)",
 ]
 
 [build-system]
