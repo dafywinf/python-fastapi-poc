@@ -1,8 +1,16 @@
 venv := ".venv/bin"
 
+# List all available commands
+help:
+    @just --list
+
 # Start the development server
 dev:
     {{venv}}/uvicorn backend.main:app --reload
+
+# Stop the development server
+dev-stop:
+    pkill -f "uvicorn backend.main:app" || true
 
 # Apply all pending database migrations
 migrate:
@@ -33,8 +41,7 @@ db-down:
 db-logs:
     docker compose logs -f db
 
-# Run all checks required before raising a PR
-# Requires: just platform-up && just dev running in a separate terminal
+# Run all checks required before raising a PR (requires platform-up + dev)
 ci: check test perf e2e
 
 # Lint and type-check the codebase
