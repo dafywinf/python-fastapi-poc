@@ -6,32 +6,20 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # ── Lint & Type Check ──────────────────────────────────────────────────────
   lint:
     name: Lint & Type Check
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install Poetry
-        run: pip install poetry
-
-      - name: Cache venv
-        uses: actions/cache@v4
-        with:
-          path: .venv
-          key: venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
-
-      - name: Install dependencies
-        run: |
-          poetry config virtualenvs.in-project true
-          poetry install
+      - uses: ./.github/actions/setup-python-poetry
 
       - name: Ruff
         run: poetry run ruff check .
@@ -44,27 +32,11 @@ jobs:
     name: Unit & Integration Tests
     runs-on: ubuntu-latest
     needs: lint
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install Poetry
-        run: pip install poetry
-
-      - name: Cache venv
-        uses: actions/cache@v4
-        with:
-          path: .venv
-          key: venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
-
-      - name: Install dependencies
-        run: |
-          poetry config virtualenvs.in-project true
-          poetry install
+      - uses: ./.github/actions/setup-python-poetry
 
       - name: Run tests
         env:
@@ -95,83 +67,47 @@ jobs:
     name: Performance Tests
     runs-on: ubuntu-latest
     needs: lint
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install Poetry
-        run: pip install poetry
-
-      - name: Cache venv
-        uses: actions/cache@v4
-        with:
-          path: .venv
-          key: venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
-
-      - name: Install dependencies
-        run: |
-          poetry config virtualenvs.in-project true
-          poetry install
+      - uses: ./.github/actions/setup-python-poetry
 
       - name: Run performance tests
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost/test
-        run: |
-          poetry run pytest tests/perf/ -v -s -m perf
+        run: poetry run pytest tests/perf/ -v -s -m perf
 
   # ── E2E Tests ───────────────────────────────────────────────────────────────
   #
   # Spins up the full monitoring stack (PostgreSQL + Prometheus + Loki +
   # Grafana) via Docker Compose, starts the FastAPI app on the host, waits
-  # for Prometheus to complete at least one scrape, then runs the e2e suite.
+  # for all services to pass their healthchecks, then runs the e2e suite.
   e2e:
     name: E2E Tests
     runs-on: ubuntu-latest
     needs: lint
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-python-poetry
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      - name: Get Playwright version
+        id: playwright-version
+        run: echo "version=$(poetry run playwright --version | awk '{print $2}')" >> $GITHUB_OUTPUT
 
-      - name: Install Poetry
-        run: pip install poetry
-
-      - name: Cache venv
+      - name: Cache Playwright browsers
         uses: actions/cache@v4
         with:
-          path: .venv
-          key: venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
-
-      - name: Install dependencies
-        run: |
-          poetry config virtualenvs.in-project true
-          poetry install
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ steps.playwright-version.outputs.version }}
 
       - name: Install Playwright browsers
         run: poetry run playwright install --with-deps chromium
 
       - name: Start platform services
-        run: |
-          docker compose up -d db
-          docker compose --profile monitoring up -d
-
-      - name: Wait for services to be healthy
-        run: |
-          echo "Waiting for PostgreSQL..."
-          until docker compose exec -T db pg_isready -U postgres -q; do sleep 1; done
-          echo "Waiting for Loki..."
-          until curl -sf http://localhost:3100/ready > /dev/null; do sleep 2; done
-          echo "Waiting for Prometheus..."
-          until curl -sf http://localhost:9090/-/ready > /dev/null; do sleep 2; done
-          echo "Waiting for Grafana..."
-          until curl -sf http://localhost:3000/api/health > /dev/null; do sleep 2; done
+        run: docker compose --profile monitoring up -d --wait
 
       - name: Run migrations
         env:
@@ -205,6 +141,7 @@ jobs:
         with:
           name: allure-results-e2e
           path: allure-results/
+          retention-days: 5
 
       - name: Show app logs on failure
         if: failure()

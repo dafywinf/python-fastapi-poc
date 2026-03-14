@@ -1,0 +1,39 @@
+name: 'Setup Python & Poetry'
+description: 'Install Python, pin Poetry, and restore the in-project .venv from cache'
+
+inputs:
+  python-version:
+    description: 'Python version'
+    default: '3.12'
+  poetry-version:
+    description: 'Exact Poetry version to pin'
+    default: '1.8.5'
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install Poetry
+      shell: bash
+      run: pip install poetry==${{ inputs.poetry-version }}
+
+    - name: Cache venv
+      uses: actions/cache@v4
+      with:
+        path: .venv
+        key: venv-${{ runner.os }}-${{ inputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+        restore-keys: |
+          venv-${{ runner.os }}-${{ inputs.python-version }}-
+
+    - name: Check lockfile consistency
+      shell: bash
+      run: poetry check --lock
+
+    - name: Install dependencies
+      shell: bash
+      run: |
+        poetry config virtualenvs.in-project true
+        poetry install --no-interaction

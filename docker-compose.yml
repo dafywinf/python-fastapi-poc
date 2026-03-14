@@ -25,6 +25,11 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/ready || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
 
   loki:
     profiles: [monitoring]
@@ -36,6 +41,11 @@ services:
       - loki_data:/loki
     command: -config.file=/etc/loki/local-config.yaml
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
 
   grafana:
     profiles: [monitoring]
@@ -56,6 +66,11 @@ services:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
 
 volumes:
   postgres_data:
