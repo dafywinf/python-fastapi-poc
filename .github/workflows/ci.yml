@@ -187,8 +187,10 @@ jobs:
             > /tmp/uvicorn.log 2>&1 &
           echo "Waiting for app..."
           until curl -sf http://localhost:8000/health > /dev/null; do sleep 1; done
-          echo "Waiting for Prometheus to complete first scrape (15s interval + buffer)..."
-          sleep 20
+          echo "Seeding traffic so Prometheus scrapes a non-zero counter..."
+          for i in $(seq 1 10); do curl -sf http://localhost:8000/health > /dev/null; done
+          echo "Waiting for Prometheus to complete 2 scrape cycles (2 × 15s + buffer)..."
+          sleep 35
 
       - name: Run e2e tests
         env:
