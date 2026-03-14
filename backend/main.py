@@ -5,7 +5,9 @@ import logging.config
 
 from fastapi import FastAPI
 from prometheus_fastapi_instrumentator import Instrumentator
+from pythonjsonlogger.json import JsonFormatter
 
+from backend.config import settings
 from backend.routes import router
 
 logging.config.dictConfig(
@@ -13,19 +15,40 @@ logging.config.dictConfig(
         "version": 1,
         "disable_existing_loggers": False,
         "formatters": {
-            "default": {
+            "json": {
+                "()": "pythonjsonlogger.json.JsonFormatter",
                 "format": "%(asctime)s %(levelname)s %(name)s %(message)s",
             }
         },
         "handlers": {
             "console": {
                 "class": "logging.StreamHandler",
-                "formatter": "default",
+                "formatter": "json",
             }
         },
         "root": {"handlers": ["console"], "level": "INFO"},
     }
 )
+
+_root_logger = logging.getLogger()
+
+if settings.loki_url is not None:
+    try:
+        import logging_loki  # pyright: ignore[reportMissingModuleSource]
+
+        loki_handler = logging_loki.LokiHandler(
+            url=f"{settings.loki_url}/loki/api/v1/push",
+            tags={"application": "fastapi"},
+            version="1",
+        )
+        loki_handler.setFormatter(JsonFormatter())
+        _root_logger.addHandler(loki_handler)
+        _root_logger.info("Loki log shipping enabled: %s", settings.loki_url)
+    except Exception:
+        _root_logger.warning(
+            "Failed to initialise Loki handler — logs will not be shipped",
+            exc_info=True,
+        )
 
 app = FastAPI(
     title="Sequence Manager",

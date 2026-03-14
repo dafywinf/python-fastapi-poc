@@ -29,16 +29,22 @@
 - **Environment:** `.venv` must live inside the project directory (`poetry config virtualenvs.in-project true`).
 - **Configuration:** All env config via `backend/config.py` (`pydantic-settings BaseSettings`) — never `os.environ` directly.
 
+## Work Process
+
+- **Task Tracking:** Always refer to `TASK_PLAN.md` for the current project state and upcoming phases.
+- **Updates:** After completing a significant sub-task, update the relevant checkbox in `TASK_PLAN.md`.
+- **Context:** Before starting a new phase, run `ls -R` to verify the filesystem matches the expected state in the plan.
+
 ## Database Schema
 
 Table: `sequences`
 
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | Integer | Primary key |
-| `name` | String | Required |
-| `description` | String | Nullable |
-| `created_at` | DateTime | Server default `now()` |
+| Column        | Type     | Notes                  |
+| ------------- | -------- | ---------------------- |
+| `id`          | Integer  | Primary key            |
+| `name`        | String   | Required               |
+| `description` | String   | Nullable               |
+| `created_at`  | DateTime | Server default `now()` |
 
 ## Project Structure
 

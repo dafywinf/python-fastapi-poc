@@ -5,8 +5,8 @@
 This project is a FastAPI-based sequence management service that demonstrates production-grade
 patterns for a synchronous Python backend: layered architecture, real-database integration
 tests, dependency injection, structured exception handling, and a full observability stack
-(Prometheus + Grafana). It is intentionally kept small so that each pattern is legible in
-isolation.
+(Prometheus + Grafana + Loki). It is intentionally kept small so that each pattern is legible
+in isolation.
 
 ---
 
@@ -50,6 +50,16 @@ A `pydantic-settings` `BaseSettings` subclass reads all environment variables (i
 `.env`). Nothing in the application reads `os.environ` directly. This makes the config
 surface explicit and type-checked.
 
+### Structured JSON logging + Loki log shipping
+
+All log output is formatted as JSON via `python-json-logger` (`pythonjsonlogger.json.JsonFormatter`),
+making every log line parseable by LogQL. When `LOKI_URL` is set in the environment, a
+`logging_loki.LokiHandler` is added to the root logger at startup, pushing all log lines
+directly to the Loki HTTP push API (`/loki/api/v1/push`) tagged with `{application="fastapi"}`.
+The handler is initialised conditionally and failures are caught so the app starts cleanly
+even without Loki running. This avoids the Promtail Docker socket discovery approach, which
+cannot capture logs from a host process.
+
 ### Exception handling via `@handle_exception`
 
 All route handlers are decorated with `@handle_exception(logger)` from
@@ -66,13 +76,16 @@ graph TD
     api["🐍 FastAPI Sequence Manager<br/>Python 3.12 — sync handlers<br/>CRUD API + /metrics endpoint"]
     postgres[("🐘 PostgreSQL<br/>Sequence records")]
     prometheus["📈 Prometheus<br/>Time-series metrics store"]
-    grafana["📊 Grafana<br/>FastAPI Service dashboard"]
+    loki["🪵 Grafana Loki<br/>Log aggregation store"]
+    grafana["📊 Grafana<br/>Metrics + Logs dashboards"]
 
     dev -->|"CRUD requests<br/>HTTP REST"| api
     api -->|"Reads & writes sequences<br/>SQL via psycopg2"| postgres
     prometheus -->|"Scrapes every 15s<br/>GET /metrics"| api
+    api -->|"Pushes JSON log lines<br/>HTTP POST /loki/api/v1/push"| loki
     grafana -->|"PromQL queries"| prometheus
-    dev -->|"Views RED metrics<br/>in browser"| grafana
+    grafana -->|"LogQL queries"| loki
+    dev -->|"Views metrics + logs<br/>in browser"| grafana
 ```
 
 ---
@@ -88,18 +101,21 @@ graph TD
     subgraph compose["Docker Compose (monitoring profile)"]
         postgres[("🐘 PostgreSQL 16<br/>port 5432<br/>Stores sequences table")]
         prometheus["📈 Prometheus<br/>port 9090<br/>Scrapes host.docker.internal:8000/metrics<br/>every 15s — stores time-series"]
-        grafana["📊 Grafana<br/>port 3000<br/>Auto-provisioned datasource + dashboard<br/>FastAPI Service — RED metrics"]
+        loki["🪵 Grafana Loki 3.x<br/>port 3100<br/>Receives JSON log lines via HTTP push<br/>Stores and indexes log streams"]
+        grafana["📊 Grafana<br/>port 3000<br/>Auto-provisioned datasources + dashboards<br/>FastAPI Service (RED) + FastAPI Logs"]
     end
 
     dev -->|"HTTP REST<br/>port 8000"| api
     api -->|"psycopg2<br/>port 5432"| postgres
     prometheus -->|"HTTP GET /metrics<br/>port 8000"| api
+    api -->|"HTTP POST /loki/api/v1/push<br/>port 3100"| loki
     grafana -->|"PromQL<br/>port 9090"| prometheus
+    grafana -->|"LogQL<br/>port 3100"| loki
     dev -->|"Browser<br/>port 3000"| grafana
 ```
 
 > **Docker Compose profiles:** PostgreSQL runs under the default profile (always up).
-> Prometheus and Grafana run under the `monitoring` profile:
+> Prometheus, Loki, and Grafana run under the `monitoring` profile:
 > `docker compose --profile monitoring up -d`
 
 ---
@@ -115,10 +131,12 @@ graph TD
         config["config.py<br/>pydantic-settings BaseSettings<br/>Reads .env — single config surface<br/>No os.environ elsewhere"]
         exc["exceptions.py<br/>@handle_exception decorator<br/>Captures full tracebacks<br/>via logger.exception"]
         metrics["Prometheus Instrumentator<br/>Starlette middleware<br/>Instruments all routes<br/>Exposes GET /metrics"]
+        logging["main.py — logging setup<br/>JSON formatter (pythonjsonlogger)<br/>LokiHandler — conditional on LOKI_URL<br/>Pushes to Loki push API"]
     end
 
     postgres[("🐘 PostgreSQL")]
     prometheus["📈 Prometheus"]
+    loki["🪵 Loki"]
     dotenv[".env file"]
 
     routes -->|"delegates to"| services
@@ -126,8 +144,10 @@ graph TD
     services -->|"SQLAlchemy session<br/>from Depends"| database
     database -->|"DATABASE_URL"| config
     config -->|"reads"| dotenv
+    config -->|"LOKI_URL"| logging
     database -->|"psycopg2 connection"| postgres
     prometheus -->|"HTTP GET /metrics"| metrics
+    logging -->|"HTTP POST push"| loki
 ```
 
 ---
