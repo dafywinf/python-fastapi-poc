@@ -1,8 +1,15 @@
-"""Pydantic V2 DTOs for the Sequence resource."""
+"""Pydantic V2 DTOs for the Sequence resource and auth responses."""
 
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
+
+
+class TokenResponse(BaseModel):
+    """Response payload for the POST /auth/token endpoint."""
+
+    access_token: str
+    token_type: str = "bearer"
 
 
 class SequenceCreate(BaseModel):

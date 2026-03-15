@@ -66,6 +66,24 @@ All route handlers are decorated with `@handle_exception(logger)` from
 `backend/exceptions.py`. This ensures that full tracebacks are captured via
 `logger.exception` rather than being swallowed silently, which is critical for observability.
 
+### JWT authentication (Phase 2)
+
+Write endpoints (`POST`/`PATCH`/`DELETE`) are gated by `WriteDep` — an
+`Annotated[str, Depends(require_authenticated_user)]` type alias defined in
+`backend/security.py`. The dependency chain is:
+
+1. `oauth2_scheme` (`OAuth2PasswordBearer`, `auto_error=False`) extracts the raw Bearer
+   token from the `Authorization` header, or returns `None` if absent.
+2. `get_optional_user` verifies the token with `python-jose` (HS256, `JWT_SECRET_KEY`),
+   returning the username on success or `None` when no token is present. A token that IS
+   present but fails verification raises `401` immediately.
+3. `require_authenticated_user` raises `401` if `get_optional_user` returned `None`.
+
+`GET` endpoints receive no auth dependency and remain fully public. Admin credentials
+(`ADMIN_PASSWORD_HASH`, bcrypt-hashed) are stored in config; no `users` database table
+is required in the MVP. The `POST /auth/token` endpoint implements the OAuth2 password
+grant and returns a signed JWT.
+
 ---
 
 ## Level 1 — System Context
@@ -126,6 +144,8 @@ graph TD
 graph TD
     subgraph api["🐍 API Container (FastAPI process)"]
         routes["routes.py<br/>HTTP handlers<br/>Request validation + HTTP responses<br/>@handle_exception on every handler"]
+        auth_routes["auth_routes.py<br/>POST /auth/token<br/>OAuth2 password grant<br/>Returns signed JWT"]
+        security["security.py<br/>JWT create/verify (python-jose)<br/>bcrypt verify (passlib)<br/>WriteDep — gates write endpoints"]
         services["services.py<br/>Business logic<br/>No HTTP knowledge<br/>Operates on SQLAlchemy models"]
         database["database.py<br/>Engine + session factory<br/>get_session DI provider<br/>Unit of Work via session lifecycle"]
         config["config.py<br/>pydantic-settings BaseSettings<br/>Reads .env — single config surface<br/>No os.environ elsewhere"]
@@ -141,6 +161,9 @@ graph TD
 
     routes -->|"delegates to"| services
     routes -->|"wrapped by"| exc
+    routes -->|"WriteDep guards writes"| security
+    auth_routes -->|"verify password"| security
+    security -->|"JWT_SECRET_KEY<br/>ADMIN_PASSWORD_HASH"| config
     services -->|"SQLAlchemy session<br/>from Depends"| database
     database -->|"DATABASE_URL"| config
     config -->|"reads"| dotenv

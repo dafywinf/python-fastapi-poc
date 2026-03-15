@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from prometheus_fastapi_instrumentator import Instrumentator
 from pythonjsonlogger.json import JsonFormatter
 
+from backend.auth_routes import router as auth_router
 from backend.config import settings
 from backend.routes import router
 
@@ -58,6 +59,7 @@ app = FastAPI(
 
 Instrumentator().instrument(app).expose(app)  # pyright: ignore[reportUnknownMemberType]
 
+app.include_router(auth_router)
 app.include_router(router)
 
 
