@@ -40,11 +40,13 @@ function mockFetchError(status: number, detail: string): void {
 // ── Test suites ───────────────────────────────────────────────────────────────
 
 describe('sequencesApi.list', () => {
-  beforeEach(() => allure.feature('Sequences API'))
+  beforeEach(() => {
+    allure.feature('Sequences API')
+    allure.story('List')
+  })
   afterEach(() => vi.unstubAllGlobals())
 
   it('returns an array of sequences on success', async () => {
-    allure.story('List')
     mockFetch([SEQUENCE])
 
     const result = await sequencesApi.list()
@@ -54,7 +56,6 @@ describe('sequencesApi.list', () => {
   })
 
   it('calls the correct endpoint', async () => {
-    allure.story('List')
     mockFetch([])
 
     await sequencesApi.list()
@@ -66,7 +67,6 @@ describe('sequencesApi.list', () => {
   })
 
   it('returns an empty array when no sequences exist', async () => {
-    allure.story('List')
     mockFetch([])
 
     const result = await sequencesApi.list()
@@ -76,11 +76,13 @@ describe('sequencesApi.list', () => {
 })
 
 describe('sequencesApi.get', () => {
-  beforeEach(() => allure.feature('Sequences API'))
+  beforeEach(() => {
+    allure.feature('Sequences API')
+    allure.story('Retrieve')
+  })
   afterEach(() => vi.unstubAllGlobals())
 
   it('returns the sequence for a valid id', async () => {
-    allure.story('Retrieve')
     mockFetch(SEQUENCE)
 
     const result = await sequencesApi.get(1)
@@ -89,7 +91,6 @@ describe('sequencesApi.get', () => {
   })
 
   it('calls the correct endpoint with the id', async () => {
-    allure.story('Retrieve')
     mockFetch(SEQUENCE)
 
     await sequencesApi.get(42)
@@ -98,7 +99,6 @@ describe('sequencesApi.get', () => {
   })
 
   it('throws an error for a 404 response', async () => {
-    allure.story('Retrieve')
     mockFetchError(404, 'Sequence 99 not found')
 
     await expect(sequencesApi.get(99)).rejects.toThrow('Sequence 99 not found')
@@ -106,27 +106,35 @@ describe('sequencesApi.get', () => {
 })
 
 describe('sequencesApi.create', () => {
-  beforeEach(() => allure.feature('Sequences API'))
+  beforeEach(() => {
+    allure.feature('Sequences API')
+    allure.story('Create')
+  })
   afterEach(() => vi.unstubAllGlobals())
 
   it('posts to the sequences endpoint and returns the created record', async () => {
-    allure.story('Create')
     mockFetch(SEQUENCE, 201)
 
-    const result = await sequencesApi.create({ name: 'Alpha', description: 'A test sequence' })
+    await allure.step('Send create request', async () => {
+      const result = await sequencesApi.create({ name: 'Alpha', description: 'A test sequence' })
 
-    expect(result).toMatchObject({ id: 1, name: 'Alpha' })
-    expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-      '/sequences/',
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({ name: 'Alpha', description: 'A test sequence' }),
-      }),
-    )
+      await allure.step('Verify response shape', async () => {
+        expect(result).toMatchObject({ id: 1, name: 'Alpha' })
+      })
+
+      await allure.step('Verify request was POST to /sequences/', async () => {
+        expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+          '/sequences/',
+          expect.objectContaining({
+            method: 'POST',
+            body: JSON.stringify({ name: 'Alpha', description: 'A test sequence' }),
+          }),
+        )
+      })
+    })
   })
 
   it('sends null description when not provided', async () => {
-    allure.story('Create')
     mockFetch({ ...SEQUENCE, description: null }, 201)
 
     await sequencesApi.create({ name: 'Beta' })
@@ -136,7 +144,6 @@ describe('sequencesApi.create', () => {
   })
 
   it('throws when the server returns a 422', async () => {
-    allure.story('Create')
     mockFetchError(422, 'Field required')
 
     await expect(sequencesApi.create({ name: '' })).rejects.toThrow('Field required')
@@ -144,25 +151,33 @@ describe('sequencesApi.create', () => {
 })
 
 describe('sequencesApi.update', () => {
-  beforeEach(() => allure.feature('Sequences API'))
+  beforeEach(() => {
+    allure.feature('Sequences API')
+    allure.story('Partial Update')
+  })
   afterEach(() => vi.unstubAllGlobals())
 
   it('sends a PATCH request and returns the updated record', async () => {
-    allure.story('Update')
     const updated = { ...SEQUENCE, name: 'Updated' }
     mockFetch(updated)
 
-    const result = await sequencesApi.update(1, { name: 'Updated' })
+    await allure.step('Send update request', async () => {
+      const result = await sequencesApi.update(1, { name: 'Updated' })
 
-    expect(result.name).toBe('Updated')
-    expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-      '/sequences/1',
-      expect.objectContaining({ method: 'PATCH' }),
-    )
+      await allure.step('Verify updated name in response', async () => {
+        expect(result.name).toBe('Updated')
+      })
+
+      await allure.step('Verify PATCH method and endpoint', async () => {
+        expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+          '/sequences/1',
+          expect.objectContaining({ method: 'PATCH' }),
+        )
+      })
+    })
   })
 
   it('throws for a 404 response', async () => {
-    allure.story('Update')
     mockFetchError(404, 'Sequence 99 not found')
 
     await expect(sequencesApi.update(99, { name: 'Ghost' })).rejects.toThrow(
@@ -172,24 +187,32 @@ describe('sequencesApi.update', () => {
 })
 
 describe('sequencesApi.delete', () => {
-  beforeEach(() => allure.feature('Sequences API'))
+  beforeEach(() => {
+    allure.feature('Sequences API')
+    allure.story('Delete')
+  })
   afterEach(() => vi.unstubAllGlobals())
 
   it('sends a DELETE request and resolves with undefined on 204', async () => {
-    allure.story('Delete')
     mockFetch(null, 204)
 
-    const result = await sequencesApi.delete(1)
+    await allure.step('Send delete request', async () => {
+      const result = await sequencesApi.delete(1)
 
-    expect(result).toBeUndefined()
-    expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-      '/sequences/1',
-      expect.objectContaining({ method: 'DELETE' }),
-    )
+      await allure.step('Verify response is undefined', async () => {
+        expect(result).toBeUndefined()
+      })
+
+      await allure.step('Verify DELETE method and endpoint', async () => {
+        expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+          '/sequences/1',
+          expect.objectContaining({ method: 'DELETE' }),
+        )
+      })
+    })
   })
 
   it('throws for a 404 response', async () => {
-    allure.story('Delete')
     mockFetchError(404, 'Sequence 99 not found')
 
     await expect(sequencesApi.delete(99)).rejects.toThrow('Sequence 99 not found')

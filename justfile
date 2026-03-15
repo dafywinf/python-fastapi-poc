@@ -42,12 +42,24 @@ db-logs:
     docker compose logs -f db
 
 # Run all checks required before raising a PR (requires platform-up + dev)
-ci: check test perf e2e
+ci: check frontend-check test perf e2e frontend-test
 
 # Lint and type-check the codebase
 check:
     {{venv}}/ruff check .
     {{venv}}/basedpyright .
+
+# Type-check and build the frontend SPA
+frontend-check:
+    cd frontend && npm run build
+
+# Run the frontend Vitest unit tests (writes Allure results to frontend/allure-results/)
+frontend-test:
+    cd frontend && npm test
+
+# Start the Vite dev server (proxies /sequences → port 8000)
+frontend-dev:
+    cd frontend && npm run dev
 
 # Run the test suite (always writes Allure results)
 test:
