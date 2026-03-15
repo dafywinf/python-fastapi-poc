@@ -168,7 +168,7 @@ async function loadSequences() {
   loading.value = true
   error.value = null
   try {
-    rows.value = await sequencesApi.list()
+    rows.value = [...(await sequencesApi.list())]
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Failed to load sequences'
   } finally {
