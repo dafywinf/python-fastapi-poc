@@ -30,12 +30,12 @@
 
 **Goal:** Layered authentication and authorization.
 
-- [ ] **Auth Core:** Implement JWT logic (OAuth2 Password Bearer) in `backend/security.py`.
-- [ ] **Local Secret Management:** Support for encrypted `.env` or local KMS mocks for sensitive data.
-- [ ] **Access Control:**
-  - Create `Optional[User]` dependency for public view access.
-  - Implement `PermissionChecker` to gate Write operations (POST/PUT/DELETE).
-- [ ] **Security Testing:** Update test suite to verify 401/403 security boundaries.
+- [x] **Auth Core:** Implement JWT logic (OAuth2 Password Bearer) in `backend/security.py`.
+- [x] **Local Secret Management:** JWT secret and admin credentials managed via `pydantic-settings` (`JWT_SECRET_KEY`, `ADMIN_PASSWORD_HASH`).
+- [x] **Access Control:**
+  - Created `get_optional_user` / `OptionalUserDep` for public view access.
+  - Implemented `WriteDep` (`require_authenticated_user`) to gate POST/PATCH/DELETE.
+- [x] **Security Testing:** Updated test suite (`tests/test_auth.py`) to verify 401 security boundaries.
 
 ---
 

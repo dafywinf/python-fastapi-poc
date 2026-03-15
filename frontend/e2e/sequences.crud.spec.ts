@@ -1,24 +1,16 @@
-import { test, expect, request as pwRequest } from '@playwright/test'
+import { test, expect } from '@playwright/test'
+import { allure } from 'allure-playwright'
 import { SequenceListPage } from './pages/SequenceListPage'
 import { FormDialog, DeleteDialog } from './pages/dialogs'
-
-const BASE_API = 'http://localhost:8000'
-
-async function createSequence(name: string): Promise<number> {
-  const ctx = await pwRequest.newContext({ baseURL: BASE_API })
-  const res = await ctx.post('/sequences', { data: { name, description: null } })
-  const body = await res.json() as { id: number }
-  await ctx.dispose()
-  return body.id
-}
-
-async function deleteSequence(id: number): Promise<void> {
-  const ctx = await pwRequest.newContext({ baseURL: BASE_API })
-  await ctx.delete(`/sequences/${id}`)
-  await ctx.dispose()
-}
+import { createSequence, deleteSequence, injectAuthToken } from './helpers/api'
 
 test.describe('Sequence CRUD dialogs', () => {
+  test.beforeEach(async ({ page }) => {
+    await allure.epic('E2E')
+    await allure.feature('Sequences')
+    await allure.story('CRUD')
+    await injectAuthToken(page)
+  })
   test('create: opens form, fills name, submits → row visible', async ({ page }) => {
     const name = `create-test-${Date.now()}`
     const listPage = new SequenceListPage(page)

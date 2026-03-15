@@ -147,6 +147,7 @@ def async_blocking_db_server(db_engine: Engine) -> Generator[str, None, None]:
 # ---------------------------------------------------------------------------
 
 
+@allure.epic("Backend")  # pyright: ignore[reportUnknownMemberType]
 @allure.feature("Performance")  # pyright: ignore[reportUnknownMemberType]
 @allure.story("DB-backed event loop blocking")  # pyright: ignore[reportUnknownMemberType]
 @pytest.mark.perf
@@ -180,6 +181,7 @@ def test_sync_db_handlers_process_requests_concurrently(sync_db_server: str) -> 
     )
 
 
+@allure.epic("Backend")  # pyright: ignore[reportUnknownMemberType]
 @allure.feature("Performance")  # pyright: ignore[reportUnknownMemberType]
 @allure.story("DB-backed event loop blocking")  # pyright: ignore[reportUnknownMemberType]
 @pytest.mark.perf
@@ -219,6 +221,7 @@ def test_async_blocking_db_handlers_serialise_requests(  # noqa: E501
     )
 
 
+@allure.epic("Backend")  # pyright: ignore[reportUnknownMemberType]
 @allure.feature("Performance")  # pyright: ignore[reportUnknownMemberType]
 @allure.story("DB-backed event loop blocking")  # pyright: ignore[reportUnknownMemberType]
 @pytest.mark.perf

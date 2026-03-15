@@ -28,6 +28,10 @@ allure-report/
 # macOS
 .DS_Store
 
-# Frontend
+# Frontend build/test artefacts
 frontend/node_modules/
 frontend/dist/
+frontend/allure-results/
+frontend/allure-results-e2e/
+frontend/allure-report/
+frontend/test-results/

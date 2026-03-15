@@ -35,6 +35,7 @@ def _loki() -> httpx.Client:
     return httpx.Client(base_url=LOKI_URL, timeout=10)
 
 
+@allure.epic("Backend")  # pyright: ignore[reportUnknownMemberType]
 @allure.feature("Observability")  # pyright: ignore[reportUnknownMemberType]
 @allure.story("Prometheus")  # pyright: ignore[reportUnknownMemberType]
 @pytest.mark.e2e
@@ -53,20 +54,28 @@ class TestPrometheus:
         ), f"fastapi target is not up: {fastapi_targets[0]['lastError']}"
 
     def test_request_duration_metric_has_data(self) -> None:
-        # Generate at least one request so the metric is non-zero
+        import time
+
+        # Generate a request then poll until Prometheus has scraped it.
         httpx.get(f"{FASTAPI_URL}/health")
 
-        with _prometheus() as client:
-            response = client.get(
-                "/api/v1/query",
-                params={"query": "http_request_duration_seconds_count"},
-            )
+        deadline = time.time() + 30
+        result: list[object] = []
+        while time.time() < deadline:
+            with _prometheus() as client:
+                response = client.get(
+                    "/api/v1/query",
+                    params={"query": "http_request_duration_seconds_count"},
+                )
+            result = response.json()["data"]["result"]
+            if result:
+                break
+            time.sleep(2)
 
-        assert response.status_code == 200
-        result = response.json()["data"]["result"]
         assert len(result) > 0, "http_request_duration_seconds_count has no data"
 
 
+@allure.epic("Backend")  # pyright: ignore[reportUnknownMemberType]
 @allure.feature("Observability")  # pyright: ignore[reportUnknownMemberType]
 @allure.story("Grafana")  # pyright: ignore[reportUnknownMemberType]
 @pytest.mark.e2e
@@ -102,16 +111,41 @@ class TestGrafana:
         assert "FastAPI" in title, f"Unexpected dashboard title: {title}"
 
     def test_dashboard_panels_return_data(self) -> None:
-        """Assert every panel query in the provisioned dashboard returns data.
+        """Assert every panel query in the provisioned dashboard returns data."""
+        import time
 
-        This test will fail if the dashboard PromQL expressions do not match
-        the metric names produced by prometheus-fastapi-instrumentator — which
-        is the known 'no data' issue with the currently committed dashboard.
-        """
-        # Generate traffic so Prometheus has recent samples to return
+        # Generate traffic then wait for Prometheus to scrape it.
+        # The scrape interval is 15 s; polling avoids a hard sleep.
         for _ in range(5):
             httpx.get(f"{FASTAPI_URL}/health")
             httpx.get(f"{FASTAPI_URL}/sequences/")
+
+        # Wait until Prometheus has scraped non-/metrics handler data AND
+        # rate() resolves (requires ≥2 scrapes at 15 s interval).
+        # Poll on both conditions together to avoid false-positive on
+        # Prometheus's own scrape of /metrics satisfying a broader query.
+        deadline = time.time() + 45
+        while time.time() < deadline:
+            _q = 'http_requests_total{job="fastapi",handler!="/metrics"}'
+            with _prometheus() as prom:
+                counter = prom.get(
+                    "/api/v1/query",
+                    params={"query": f"sum({_q})"},
+                )
+                rate_q = prom.get(
+                    "/api/v1/query",
+                    params={"query": f"rate({_q}[1m])"},
+                )
+            counter_ok = bool(counter.json().get("data", {}).get("result"))
+            rate_ok = bool(rate_q.json().get("data", {}).get("result"))
+            if counter_ok and rate_ok:
+                break
+            time.sleep(2)
+        else:
+            pytest.fail(
+                "Timed out waiting for Prometheus data — "
+                "ensure the app has been running for at least 30 s"
+            )
 
         with _grafana() as client:
             # Resolve datasource UID
@@ -170,6 +204,7 @@ class TestGrafana:
         )
 
 
+@allure.epic("Backend")  # pyright: ignore[reportUnknownMemberType]
 @allure.feature("Observability")  # pyright: ignore[reportUnknownMemberType]
 @allure.story("Loki")  # pyright: ignore[reportUnknownMemberType]
 @pytest.mark.e2e

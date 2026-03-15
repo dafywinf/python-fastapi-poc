@@ -2,10 +2,15 @@ import type { Sequence, SequenceCreate, SequenceUpdate } from '../types/sequence
 
 const BASE_URL = '/sequences'
 
+function authHeaders(): Record<string, string> {
+  const token = localStorage.getItem('access_token')
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, {
-    headers: { 'Content-Type': 'application/json' },
     ...options,
+    headers: { 'Content-Type': 'application/json', ...authHeaders(), ...options?.headers },
   })
   if (!response.ok) {
     const detail = await response.json().catch(() => ({ detail: response.statusText }))

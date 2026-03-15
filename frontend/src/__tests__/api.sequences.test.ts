@@ -41,7 +41,8 @@ function mockFetchError(status: number, detail: string): void {
 
 describe('sequencesApi.list', () => {
   beforeEach(() => {
-    allure.feature('Sequences API')
+    allure.epic('Frontend')
+    allure.feature('Sequences')
     allure.story('List')
   })
   afterEach(() => vi.unstubAllGlobals())
@@ -77,7 +78,8 @@ describe('sequencesApi.list', () => {
 
 describe('sequencesApi.get', () => {
   beforeEach(() => {
-    allure.feature('Sequences API')
+    allure.epic('Frontend')
+    allure.feature('Sequences')
     allure.story('Retrieve')
   })
   afterEach(() => vi.unstubAllGlobals())
@@ -107,7 +109,8 @@ describe('sequencesApi.get', () => {
 
 describe('sequencesApi.create', () => {
   beforeEach(() => {
-    allure.feature('Sequences API')
+    allure.epic('Frontend')
+    allure.feature('Sequences')
     allure.story('Create')
   })
   afterEach(() => vi.unstubAllGlobals())
@@ -152,7 +155,8 @@ describe('sequencesApi.create', () => {
 
 describe('sequencesApi.update', () => {
   beforeEach(() => {
-    allure.feature('Sequences API')
+    allure.epic('Frontend')
+    allure.feature('Sequences')
     allure.story('Partial Update')
   })
   afterEach(() => vi.unstubAllGlobals())
@@ -188,7 +192,8 @@ describe('sequencesApi.update', () => {
 
 describe('sequencesApi.delete', () => {
   beforeEach(() => {
-    allure.feature('Sequences API')
+    allure.epic('Frontend')
+    allure.feature('Sequences')
     allure.story('Delete')
   })
   afterEach(() => vi.unstubAllGlobals())

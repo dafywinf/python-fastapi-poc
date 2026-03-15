@@ -15,6 +15,7 @@ and take several seconds intentionally.
 import time
 from collections.abc import Generator
 
+import allure
 import pytest
 from fastapi import FastAPI
 
@@ -81,6 +82,9 @@ def async_blocking_server() -> Generator[str, None, None]:
 # ---------------------------------------------------------------------------
 
 
+@allure.epic("Backend")  # pyright: ignore[reportUnknownMemberType]
+@allure.feature("Performance")  # pyright: ignore[reportUnknownMemberType]
+@allure.story("Event loop blocking")  # pyright: ignore[reportUnknownMemberType]
 @pytest.mark.perf
 def test_sync_handlers_process_requests_concurrently(sync_server: str) -> None:
     """sync def handlers run in the thread pool — requests execute in parallel.
@@ -111,6 +115,9 @@ def test_sync_handlers_process_requests_concurrently(sync_server: str) -> None:
     )
 
 
+@allure.epic("Backend")  # pyright: ignore[reportUnknownMemberType]
+@allure.feature("Performance")  # pyright: ignore[reportUnknownMemberType]
+@allure.story("Event loop blocking")  # pyright: ignore[reportUnknownMemberType]
 @pytest.mark.perf
 def test_async_blocking_handlers_serialise_requests(async_blocking_server: str) -> None:
     """async def handlers with blocking calls serialise on the event loop.
@@ -142,6 +149,9 @@ def test_async_blocking_handlers_serialise_requests(async_blocking_server: str) 
     )
 
 
+@allure.epic("Backend")  # pyright: ignore[reportUnknownMemberType]
+@allure.feature("Performance")  # pyright: ignore[reportUnknownMemberType]
+@allure.story("Event loop blocking")  # pyright: ignore[reportUnknownMemberType]
 @pytest.mark.perf
 def test_async_blocking_is_significantly_slower_than_sync(
     sync_server: str, async_blocking_server: str
