@@ -2,11 +2,14 @@
 
 ## Overview
 
-This project is a FastAPI-based sequence management service that demonstrates production-grade
-patterns for a synchronous Python backend: layered architecture, real-database integration
-tests, dependency injection, structured exception handling, and a full observability stack
-(Prometheus + Grafana + Loki). It is intentionally kept small so that each pattern is legible
-in isolation.
+This project is a full-stack sequence management application demonstrating production-grade
+patterns across a synchronous Python backend and a modern TypeScript SPA. The backend uses
+layered architecture, real-database integration tests, dependency injection, structured
+exception handling, and a full observability stack (Prometheus + Grafana + Loki). The
+frontend is a Vite + Vue 3 SPA with PrimeVue (unstyled) and Tailwind CSS. Both layers are
+intentionally kept small so that each pattern is legible in isolation.
+
+See also: [`docs/frontend.md`](./frontend.md) for the SPA-specific architecture.
 
 ---
 
