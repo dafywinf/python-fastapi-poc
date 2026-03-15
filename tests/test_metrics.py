@@ -4,6 +4,7 @@ import allure
 from fastapi.testclient import TestClient
 
 
+@allure.epic("Backend")  # pyright: ignore[reportUnknownMemberType]
 @allure.feature("Observability")  # pyright: ignore[reportUnknownMemberType]
 @allure.story("Prometheus metrics")  # pyright: ignore[reportUnknownMemberType]
 class TestMetrics:

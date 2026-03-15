@@ -4,6 +4,7 @@ import allure
 from fastapi.testclient import TestClient
 
 
+@allure.epic("Backend")  # pyright: ignore[reportUnknownMemberType]
 @allure.feature("Health")  # pyright: ignore[reportUnknownMemberType]
 @allure.story("Service liveness")  # pyright: ignore[reportUnknownMemberType]
 def test_health_returns_ok(client: TestClient) -> None:

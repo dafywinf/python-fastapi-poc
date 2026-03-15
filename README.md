@@ -40,10 +40,12 @@ cd frontend && npm ci && cd ..
 
 ### 6. Configure environment variables
 
-The `.env` file is pre-configured for the Docker Compose database:
+The `.env` file is pre-configured for the Docker Compose database. A minimal `.env` looks like:
 
 ```env
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/sequences_db
+JWT_SECRET_KEY=change-me-to-a-long-random-secret
+ADMIN_PASSWORD_HASH=$2b$12$...  # generate with: python -c "import bcrypt; print(bcrypt.hashpw(b'your-password', bcrypt.gensalt()).decode())"
 ```
 
 To enable Loki log shipping, uncomment `LOKI_URL` in `.env` **after** starting the monitoring stack:
@@ -173,23 +175,34 @@ just clean-reports
 
 ## API Endpoints
 
-| Method | Path | Status | Description |
-|--------|------|--------|-------------|
-| `GET` | `/health` | `200` | Liveness check |
-| `GET` | `/metrics` | `200` | Prometheus metrics |
-| `POST` | `/sequences/` | `201` | Create a new Sequence |
-| `GET` | `/sequences/` | `200` | List all Sequences |
-| `GET` | `/sequences/{id}` | `200` / `404` | Retrieve a Sequence by ID |
-| `PATCH` | `/sequences/{id}` | `200` / `404` | Partially update a Sequence |
-| `DELETE` | `/sequences/{id}` | `204` / `404` | Delete a Sequence |
+| Method | Path | Auth | Status | Description |
+|--------|------|------|--------|-------------|
+| `GET` | `/health` | — | `200` | Liveness check |
+| `GET` | `/metrics` | — | `200` | Prometheus metrics |
+| `POST` | `/auth/token` | — | `200` / `401` | Obtain a JWT access token |
+| `POST` | `/sequences/` | Bearer | `201` / `401` | Create a new Sequence |
+| `GET` | `/sequences/` | — | `200` | List all Sequences (public) |
+| `GET` | `/sequences/{id}` | — | `200` / `404` | Retrieve a Sequence by ID (public) |
+| `PATCH` | `/sequences/{id}` | Bearer | `200` / `401` / `404` | Partially update a Sequence |
+| `DELETE` | `/sequences/{id}` | Bearer | `204` / `401` / `404` | Delete a Sequence |
 
-### Example: create a Sequence
+### Authentication
+
+The API uses **OAuth2 Password Bearer** tokens. Obtain a token then include it in write requests:
 
 ```bash
+# 1. Get a token
+TOKEN=$(curl -s -X POST http://localhost:8000/auth/token \
+  -d "username=admin&password=<your-password>" | jq -r .access_token)
+
+# 2. Use the token for write operations
 curl -X POST http://localhost:8000/sequences/ \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"name": "My Sequence", "description": "optional"}'
 ```
+
+Read operations (`GET`) are public and do not require a token.
 
 ---
 
@@ -206,6 +219,8 @@ curl -X POST http://localhost:8000/sequences/ \
 │   ├── database.py     # Engine & session factory
 │   ├── routes.py       # API route handlers (sync def)
 │   ├── services.py     # Business logic
+│   ├── security.py     # JWT helpers, OAuth2 dependency providers (WriteDep)
+│   ├── auth_routes.py  # POST /auth/token — OAuth2 password grant
 │   └── exceptions.py   # Exception handling decorator
 ├── frontend/
 │   ├── src/
@@ -274,3 +289,4 @@ curl -X POST http://localhost:8000/sequences/ \
 - **Migrations**: Alembic autogenerate — edit `backend/models.py`, then run `just makemigrations "describe change"` followed by `just migrate`.
 - **Observability**: `prometheus-fastapi-instrumentator` exposes RED metrics at `/metrics`. Prometheus scrapes every 15s; the FastAPI Observability dashboard is pre-provisioned. Structured JSON logs are shipped directly to Loki via `python-logging-loki` and queryable in the FastAPI Logs Grafana dashboard.
 - **Frontend**: Vite dev server proxies `/sequences` and `/health` to the backend at port 8000, so both run independently and no CORS config is needed in development.
+- **Authentication**: JWT Bearer tokens via `python-jose` (HS256). Write endpoints (`POST`/`PATCH`/`DELETE`) require a valid token; `GET` endpoints are public. Credentials are config-driven (`JWT_SECRET_KEY`, `ADMIN_PASSWORD_HASH`) — no database user table in the MVP.

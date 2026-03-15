@@ -14,6 +14,7 @@ from backend.database import get_session
 from backend.exceptions import handle_exception
 from backend.models import Sequence
 from backend.schemas import SequenceCreate, SequenceResponse, SequenceUpdate
+from backend.security import WriteDep
 from backend.services import (
     create_sequence,
     delete_sequence,
@@ -60,12 +61,15 @@ SequenceDep = Annotated[Sequence, Depends(_get_sequence_or_404)]
     status_code=status.HTTP_201_CREATED,
 )
 @handle_exception(logger)
-def create(payload: SequenceCreate, session: SessionDep) -> SequenceResponse:
+def create(
+    payload: SequenceCreate, session: SessionDep, _user: WriteDep
+) -> SequenceResponse:
     """Create a new Sequence.
 
     Args:
         payload: Validated creation payload.
         session: Injected database session.
+        _user: Authenticated username (enforces JWT auth; value unused).
 
     Returns:
         The created Sequence.
@@ -107,6 +111,7 @@ def partial_update(
     sequence: SequenceDep,
     payload: SequenceUpdate,
     session: SessionDep,
+    _user: WriteDep,
 ) -> SequenceResponse:
     """Partially update a Sequence.
 
@@ -114,6 +119,7 @@ def partial_update(
         sequence: Injected Sequence instance (raises 404 if not found).
         payload: Fields to update (None values are ignored).
         session: Injected database session.
+        _user: Authenticated username (enforces JWT auth; value unused).
 
     Returns:
         The updated Sequence.
@@ -123,11 +129,12 @@ def partial_update(
 
 @router.delete("/{sequence_id}", status_code=status.HTTP_204_NO_CONTENT)
 @handle_exception(logger)
-def destroy(sequence: SequenceDep, session: SessionDep) -> None:
+def destroy(sequence: SequenceDep, session: SessionDep, _user: WriteDep) -> None:
     """Delete a Sequence.
 
     Args:
         sequence: Injected Sequence instance (raises 404 if not found).
         session: Injected database session.
+        _user: Authenticated username (enforces JWT auth; value unused).
     """
     delete_sequence(session, sequence)

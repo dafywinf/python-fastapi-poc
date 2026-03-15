@@ -18,8 +18,12 @@ from testcontainers.postgres import PostgresContainer
 
 from alembic import command
 from alembic.config import Config
+from backend.config import settings
 from backend.database import get_session
 from backend.main import app
+
+# Test password that matches the ADMIN_PASSWORD_HASH set in the root conftest.py.
+_TEST_ADMIN_PASSWORD = "testpass"
 
 # Docker Desktop on macOS uses a non-standard socket — set DOCKER_HOST so
 # testcontainers can find the daemon without manual environment setup.
@@ -95,3 +99,37 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+
+
+@pytest.fixture()
+def auth_token(client: TestClient) -> str:
+    """Obtain a JWT access token by authenticating with the test admin credentials.
+
+    Args:
+        client: The test HTTP client (provides the /auth/token endpoint).
+
+    Returns:
+        A signed JWT access token string.
+    """
+    response = client.post(
+        "/auth/token",
+        data={
+            "username": settings.admin_username,
+            "password": _TEST_ADMIN_PASSWORD,
+        },
+    )
+    assert response.status_code == 200, f"Auth failed: {response.text}"
+    return str(response.json()["access_token"])
+
+
+@pytest.fixture()
+def auth_headers(auth_token: str) -> dict[str, str]:
+    """Return Authorization headers containing a valid Bearer token.
+
+    Args:
+        auth_token: A signed JWT access token.
+
+    Returns:
+        A dict suitable for use as request headers.
+    """
+    return {"Authorization": f"Bearer {auth_token}"}

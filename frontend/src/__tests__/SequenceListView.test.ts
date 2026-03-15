@@ -61,7 +61,8 @@ afterEach(() => vi.resetAllMocks())
 
 describe('SequenceListView — initial render', () => {
   beforeEach(() => {
-    allure.feature('Sequences UI')
+    allure.epic('Frontend')
+    allure.feature('Sequences')
     allure.story('List')
     HTMLDialogElement.prototype.showModal = vi.fn()
     HTMLDialogElement.prototype.close = vi.fn()
@@ -122,7 +123,8 @@ describe('SequenceListView — initial render', () => {
 
 describe('SequenceListView — sorting', () => {
   beforeEach(() => {
-    allure.feature('Sequences UI')
+    allure.epic('Frontend')
+    allure.feature('Sequences')
     allure.story('List')
     HTMLDialogElement.prototype.showModal = vi.fn()
     HTMLDialogElement.prototype.close = vi.fn()
@@ -160,7 +162,8 @@ describe('SequenceListView — sorting', () => {
 
 describe('SequenceListView — create dialog', () => {
   beforeEach(() => {
-    allure.feature('Sequences UI')
+    allure.epic('Frontend')
+    allure.feature('Sequences')
     allure.story('Create')
     HTMLDialogElement.prototype.showModal = vi.fn()
     HTMLDialogElement.prototype.close = vi.fn()
@@ -217,7 +220,8 @@ describe('SequenceListView — create dialog', () => {
 
 describe('SequenceListView — edit dialog', () => {
   beforeEach(() => {
-    allure.feature('Sequences UI')
+    allure.epic('Frontend')
+    allure.feature('Sequences')
     allure.story('Partial Update')
     HTMLDialogElement.prototype.showModal = vi.fn()
     HTMLDialogElement.prototype.close = vi.fn()
@@ -264,7 +268,8 @@ describe('SequenceListView — edit dialog', () => {
 
 describe('SequenceListView — delete dialog', () => {
   beforeEach(() => {
-    allure.feature('Sequences UI')
+    allure.epic('Frontend')
+    allure.feature('Sequences')
     allure.story('Delete')
     HTMLDialogElement.prototype.showModal = vi.fn()
     HTMLDialogElement.prototype.close = vi.fn()

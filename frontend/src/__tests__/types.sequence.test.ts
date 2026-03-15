@@ -11,7 +11,8 @@ import type { Sequence, SequenceCreate, SequenceUpdate } from '../types/sequence
 
 describe('Sequence type contract', () => {
   beforeEach(() => {
-    allure.feature('Sequence Types')
+    allure.epic('Frontend')
+    allure.feature('Sequences')
     allure.story('Contract')
   })
 

@@ -152,6 +152,12 @@ jobs:
       - name: Install Playwright browsers
         run: poetry run playwright install --with-deps chromium
 
+      - name: Set CI test credentials
+        run: |
+          echo "JWT_SECRET_KEY=ci-test-jwt-secret-key-not-for-production" >> $GITHUB_ENV
+          HASH=$(poetry run python3 -c "import bcrypt; print(bcrypt.hashpw(b'admin', bcrypt.gensalt(rounds=4)).decode())")
+          echo "ADMIN_PASSWORD_HASH=${HASH}" >> $GITHUB_ENV
+
       - name: Start platform services
         run: docker compose --profile monitoring up -d --wait
 
@@ -233,6 +239,12 @@ jobs:
       - name: Install Playwright Chromium
         working-directory: frontend
         run: npx playwright install --with-deps chromium
+
+      - name: Set CI test credentials
+        run: |
+          echo "JWT_SECRET_KEY=ci-test-jwt-secret-key-not-for-production" >> $GITHUB_ENV
+          HASH=$(poetry run python3 -c "import bcrypt; print(bcrypt.hashpw(b'admin', bcrypt.gensalt(rounds=4)).decode())")
+          echo "ADMIN_PASSWORD_HASH=${HASH}" >> $GITHUB_ENV
 
       - name: Start database
         run: docker compose up -d db --wait
