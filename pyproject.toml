@@ -42,14 +42,14 @@ pythonVersion = "3.12"
 reportMissingTypeStubs = "none"
 reportUntypedFunctionDecorator = "none"
 reportUntypedClassDecorator = "none"
-exclude = ["alembic", ".venv"]
+exclude = ["alembic", ".venv", "frontend"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --ignore=tests/perf --ignore=tests/e2e"
 markers = [
-    "perf: performance/timing tests (run with: just perf)",
-    "e2e: end-to-end tests against a live running stack (run with: just e2e)",
+    "perf: performance/timing tests (run with: just backend-perf)",
+    "e2e: end-to-end tests against a live running stack (run with: just backend-e2e)",
 ]
 
 [build-system]

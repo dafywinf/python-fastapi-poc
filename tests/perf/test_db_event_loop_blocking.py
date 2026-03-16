@@ -62,7 +62,9 @@ async def async_blocking_db_handler(  # noqa: E501
     session.execute() blocks the event loop thread, preventing any other
     coroutine from running until the query returns.
     """
-    session.execute(text("SELECT pg_sleep(0.5)"))  # blocks the event loop — do not do this  # noqa: E501
+    session.execute(
+        text("SELECT pg_sleep(0.5)")
+    )  # blocks the event loop — do not do this  # noqa: E501
     return {"mode": "async-blocking-db"}
 
 
@@ -89,7 +91,9 @@ def db_engine(pg_container: PostgresContainer):
     pool_size=10 so all 6 concurrent requests get their own connection
     (default pool_size=5 would queue the 6th request, muddying results).
     """
-    url = pg_container.get_connection_url().replace("postgresql+psycopg2://", "postgresql://")
+    url = pg_container.get_connection_url().replace(
+        "postgresql+psycopg2://", "postgresql://"
+    )
     _engine = create_engine(url, pool_size=10, max_overflow=10)
     yield _engine
     _engine.dispose()
@@ -161,7 +165,9 @@ def test_sync_db_handlers_process_requests_concurrently(sync_db_server: str) -> 
         t=0.0  req6─────┘
         t=0.5  all complete  ← total elapsed ≈ 0.5s
     """
-    with allure.step(f"Fire {CONCURRENT_REQUESTS} concurrent requests at sync-db server"):  # noqa: E501
+    with allure.step(
+        f"Fire {CONCURRENT_REQUESTS} concurrent requests at sync-db server"
+    ):  # noqa: E501
         elapsed, status_codes = fire_concurrent(sync_db_server, CONCURRENT_REQUESTS)
 
     print(f"\n[sync-db]  {CONCURRENT_REQUESTS} concurrent requests: {elapsed:.2f}s")
@@ -194,10 +200,16 @@ def test_async_blocking_db_handlers_serialise_requests(  # noqa: E501
     with allure.step(  # noqa: E501
         f"Fire {CONCURRENT_REQUESTS} concurrent requests at async-blocking-db server"
     ):
-        elapsed, status_codes = fire_concurrent(async_blocking_db_server, CONCURRENT_REQUESTS)  # noqa: E501
+        elapsed, status_codes = fire_concurrent(
+            async_blocking_db_server, CONCURRENT_REQUESTS
+        )  # noqa: E501
 
-    print(f"\n[async-blocking-db]  {CONCURRENT_REQUESTS} concurrent requests: {elapsed:.2f}s")  # noqa: E501
-    print(f"                     expected ≈ {PG_SLEEP * CONCURRENT_REQUESTS}s  (serialised)")  # noqa: E501
+    print(
+        f"\n[async-blocking-db]  {CONCURRENT_REQUESTS} concurrent requests: {elapsed:.2f}s"  # noqa: E501
+    )
+    print(
+        f"                     expected ≈ {PG_SLEEP * CONCURRENT_REQUESTS}s  (serialised)"  # noqa: E501
+    )
 
     assert all(s == 200 for s in status_codes), "All requests should succeed"
     assert elapsed > PG_SLEEP * (CONCURRENT_REQUESTS - 1), (
@@ -223,7 +235,9 @@ def test_async_blocking_db_is_significantly_slower_than_sync(
         sync_elapsed, _ = fire_concurrent(sync_db_server, CONCURRENT_REQUESTS)
 
     with allure.step("Measure async-blocking-db elapsed time"):
-        async_elapsed, _ = fire_concurrent(async_blocking_db_server, CONCURRENT_REQUESTS)  # noqa: E501
+        async_elapsed, _ = fire_concurrent(
+            async_blocking_db_server, CONCURRENT_REQUESTS
+        )  # noqa: E501
 
     ratio = async_elapsed / sync_elapsed
 

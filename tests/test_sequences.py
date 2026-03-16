@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _create_sequence(
     client: TestClient, name: str = "Alpha", description: str | None = "desc"
 ) -> dict[str, object]:
@@ -21,6 +22,7 @@ def _create_sequence(
 # ---------------------------------------------------------------------------
 # POST /sequences/
 # ---------------------------------------------------------------------------
+
 
 @allure.feature("Sequences")  # pyright: ignore[reportUnknownMemberType]
 @allure.story("Create")  # pyright: ignore[reportUnknownMemberType]
@@ -61,6 +63,7 @@ class TestCreateSequence:
 # GET /sequences/
 # ---------------------------------------------------------------------------
 
+
 @allure.feature("Sequences")  # pyright: ignore[reportUnknownMemberType]
 @allure.story("List")  # pyright: ignore[reportUnknownMemberType]
 class TestListSequences:
@@ -94,6 +97,7 @@ class TestListSequences:
 # GET /sequences/{id}
 # ---------------------------------------------------------------------------
 
+
 @allure.feature("Sequences")  # pyright: ignore[reportUnknownMemberType]
 @allure.story("Retrieve")  # pyright: ignore[reportUnknownMemberType]
 class TestRetrieveSequence:
@@ -117,6 +121,7 @@ class TestRetrieveSequence:
 # ---------------------------------------------------------------------------
 # PATCH /sequences/{id}
 # ---------------------------------------------------------------------------
+
 
 @allure.feature("Sequences")  # pyright: ignore[reportUnknownMemberType]
 @allure.story("Partial Update")  # pyright: ignore[reportUnknownMemberType]
@@ -175,6 +180,7 @@ class TestPartialUpdateSequence:
 # ---------------------------------------------------------------------------
 # DELETE /sequences/{id}
 # ---------------------------------------------------------------------------
+
 
 @allure.feature("Sequences")  # pyright: ignore[reportUnknownMemberType]
 @allure.story("Delete")  # pyright: ignore[reportUnknownMemberType]

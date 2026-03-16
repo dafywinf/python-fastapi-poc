@@ -29,7 +29,7 @@
 | Test runner | `pytest ^8.3` | |
 | Coverage | `pytest-cov ^6.0` | Minimum 80% for new features |
 | HTTP client | `httpx ^0.28` | Used by FastAPI TestClient |
-| Test reporting | `allure-pytest ^2.13` | Reports locally via `just test-report` |
+| Test reporting | `allure-pytest ^2.13` | Reports locally via `just backend-test-report` |
 | Integration DB | `testcontainers[postgres] ^4.14` | Real PostgreSQL in tests — no mocking, no SQLite |
 
 ## SQLAlchemy 2.0 Patterns
@@ -105,7 +105,7 @@ Run **one command** before every commit and before raising a PR:
 
 ```bash
 just ci   # ruff + basedpyright + pytest (unit/integration with allure) + perf tests + e2e tests (with allure)
-          # Precondition: just platform-up && just dev must be running
+          # Precondition: just platform-up && just backend-dev must be running
 ```
 
 Never invoke the underlying tools (`ruff`, `basedpyright`, `pytest`) directly — use `just` so the recipes stay in sync.

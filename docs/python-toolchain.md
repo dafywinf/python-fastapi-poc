@@ -282,7 +282,7 @@ poetry add <pkg>            .venv/, pyproject.toml,         No
                             poetry.lock
 pip install <pkg>           Depends on active environment   Possibly yes (see above)
 .venv/bin/pip install <pkg> .venv/                          No (but not tracked)
-just test / just dev        reads .venv/, no writes         No
+just backend-test / just backend-dev        reads .venv/, no writes         No
 ```
 
 ---
@@ -299,7 +299,7 @@ just test / just dev        reads .venv/, no writes         No
 │ Add a dev pkg    │ poetry add --group dev <package>                     │
 │ Remove a package │ poetry remove <package>                              │
 │ Run tests        │ just test                                            │
-│ Run the server   │ just dev                                             │
+│ Run the server   │ just backend-dev                                             │
 │ See what's in    │ .venv/bin/pip list                                   │
 │ the virtualenv   │                                                      │
 └──────────────────┴─────────────────────────────────────────────────────┘
@@ -558,7 +558,7 @@ report with per-test timelines, attachments, and pass/fail history.
   gap between technical tests and stakeholder-readable results.
 - **Local only** — report generation is intentionally kept off CI (it adds
   time and artefact storage complexity); developers generate reports locally
-  with `just test-report` and `just perf-report` when they need them.
+  with `just backend-test-report` and `just backend-perf-report` when they need them.
 
 ---
 

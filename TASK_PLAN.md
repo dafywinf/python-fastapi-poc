@@ -43,10 +43,13 @@
 
 **Goal:** Modern, accessible UI foundation.
 
-- [ ] **Vite Setup:** Initialise `frontend/` with Vue 3 and TypeScript.
-- [ ] **PrimeVue Integration:** Set up "Unstyled Mode" with Tailwind CSS.
-- [ ] **Layout:** Build the responsive App shell (Navbar/Sidebar).
-- [ ] **API Layer:** Configure Axios/Fetch interceptors for port 8000 communication.
+- [x] **Vite Setup:** Initialise `frontend/` with Vue 3 and TypeScript.
+- [x] **PrimeVue Integration:** Set up "Unstyled Mode" with Tailwind CSS.
+- [x] **Layout:** Build the responsive App shell (Navbar/Sidebar).
+- [x] **API Layer:** Configure Fetch-based API client with Vite proxy for port 8000 communication.
+- [x] **Frontend Tests:** Vitest + allure-vitest; 47 tests across types, API client, list view, detail view.
+- [x] **CI Integration:** GitHub Actions `frontend` job (build, test, Allure artifact upload).
+- [x] **Documentation:** `docs/frontend.md` — architecture, tech stack, test guide, C4 diagram.
 
 ---
 
@@ -54,7 +57,8 @@
 
 **Goal:** Complete the user loop with conditional permissions.
 
-- [ ] **DataTable:** Implement PrimeVue `DataTable` with server-side sorting/filtering.
-- [ ] **View Mode:** Read-only detail view for sequences.
+- [x] **DataTable:** Sortable sequence table with client-side column sorting.
+- [x] **View Mode:** Read-only detail view for sequences (`/sequences/:id`).
+- [x] **CRUD Dialogs:** Create, edit, and delete via native `<dialog>` modals in list and detail views.
 - [ ] **Login Flow:** User authentication UI and JWT persistence in `localStorage`.
 - [ ] **Edit Mode:** Conditional rendering of forms/dialogs based on user ownership/scopes.

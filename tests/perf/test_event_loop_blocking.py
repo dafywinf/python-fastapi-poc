@@ -126,8 +126,12 @@ def test_async_blocking_handlers_serialise_requests(async_blocking_server: str) 
     """
     elapsed, status_codes = fire_concurrent(async_blocking_server, CONCURRENT_REQUESTS)
 
-    print(f"\n[async-blocking]  {CONCURRENT_REQUESTS} concurrent requests: {elapsed:.2f}s")  # noqa: E501
-    print(f"                  expected ≈ {BLOCKING_SECONDS * CONCURRENT_REQUESTS}s  (serialised)")  # noqa: E501
+    print(
+        f"\n[async-blocking]  {CONCURRENT_REQUESTS} concurrent requests: {elapsed:.2f}s"
+    )  # noqa: E501
+    print(
+        f"                  expected ≈ {BLOCKING_SECONDS * CONCURRENT_REQUESTS}s  (serialised)"  # noqa: E501
+    )
 
     assert all(s == 200 for s in status_codes), "All requests should succeed"
     # Should take at least (N-1) sleep durations — proof of serialisation.
