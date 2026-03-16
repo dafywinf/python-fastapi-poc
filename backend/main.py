@@ -9,6 +9,7 @@ from pythonjsonlogger.json import JsonFormatter
 
 from backend.config import settings
 from backend.routes import router
+from backend.telemetry_routes import router as telemetry_router
 
 logging.config.dictConfig(
     {
@@ -59,6 +60,7 @@ app = FastAPI(
 Instrumentator().instrument(app).expose(app)  # pyright: ignore[reportUnknownMemberType]
 
 app.include_router(router)
+app.include_router(telemetry_router, prefix="/api/v1")
 
 
 @app.get("/health", tags=["health"])
