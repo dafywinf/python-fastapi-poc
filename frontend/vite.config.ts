@@ -10,6 +10,15 @@ export default defineConfig({
       '/sequences': {
         target: 'http://localhost:8000',
         changeOrigin: true,
+        bypass(req) {
+          // Browser navigation (Accept: text/html) should be served the SPA
+          // shell so Vue Router handles the route client-side.  API fetch calls
+          // (Accept: application/json) are proxied to the backend as normal.
+          if (req.headers.accept?.includes('text/html')) {
+            return '/index.html'
+          }
+          return null
+        },
       },
       '/health': {
         target: 'http://localhost:8000',

@@ -192,3 +192,87 @@ jobs:
       - name: Show app logs on failure
         if: failure()
         run: cat /tmp/uvicorn.log || true
+
+  # ── Frontend E2E (Playwright) ───────────────────────────────────────────────
+  #
+  # Spins up PostgreSQL, starts the FastAPI backend, then runs the Playwright
+  # suite against the Vite dev server (started automatically via webServer block
+  # in playwright.config.ts when CI=true).
+  frontend-e2e:
+    name: Frontend E2E (Playwright)
+    runs-on: ubuntu-latest
+    needs: [backend-lint, frontend]
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-python-poetry
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Get Playwright version
+        id: playwright-version
+        working-directory: frontend
+        run: echo "version=$(npx playwright --version | awk '{print $2}')" >> $GITHUB_OUTPUT
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-frontend-${{ steps.playwright-version.outputs.version }}
+
+      - name: Install Playwright Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Start database
+        run: docker compose up -d db --wait
+
+      - name: Run migrations
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/sequences_db
+        run: poetry run alembic upgrade head
+
+      - name: Start FastAPI app
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/sequences_db
+        run: |
+          nohup poetry run uvicorn backend.main:app --host 0.0.0.0 --port 8000 \
+            > /tmp/uvicorn.log 2>&1 &
+          echo "Waiting for backend..."
+          until curl -sf http://localhost:8000/health > /dev/null; do sleep 1; done
+
+      - name: Run Playwright e2e tests
+        working-directory: frontend
+        env:
+          CI: 'true'
+        run: npm run e2e
+
+      - name: Upload Allure results (e2e)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-frontend-e2e
+          path: frontend/allure-results-e2e/
+          retention-days: 5
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 5
+
+      - name: Show backend logs on failure
+        if: failure()
+        run: cat /tmp/uvicorn.log || true
