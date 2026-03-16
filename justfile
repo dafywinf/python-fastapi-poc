@@ -106,6 +106,32 @@ frontend-check: frontend-lint
 frontend-test:
     cd frontend && npm test
 
+# Install Playwright browser binaries (run once after npm install)
+frontend-e2e-install:
+    cd frontend && npx playwright install chromium
+
+# Run Playwright e2e tests (requires: just dev-up)
+frontend-e2e:
+    cd frontend && npm run e2e
+
+# Run frontend Vitest tests and open the Allure report in a browser
+frontend-test-report: frontend-test
+    cd frontend && allure serve allure-results
+
+# Run Playwright e2e tests and open the Allure report in a browser
+# Requires: just dev-up
+frontend-e2e-report: frontend-e2e
+    cd frontend && allure serve allure-results-e2e
+
+# Delete all Allure results so the next report contains only fresh test runs
+clean-reports:
+    rm -rf allure-results frontend/allure-results frontend/allure-results-e2e
+
+# Run all tests (backend + frontend) then open a combined Allure report
+# Requires: just platform-up && just dev-up
+report: clean-reports ci
+    allure serve allure-results frontend/allure-results frontend/allure-results-e2e
+
 # ── Platform ─────────────────────────────────────────────────────────────────
 
 # Start all platform services (PostgreSQL + full monitoring stack)
@@ -152,6 +178,6 @@ bootstrap: db-up
 
 # ── CI ───────────────────────────────────────────────────────────────────────
 
-# Full pre-PR gate: backend checks + all tests + frontend check + frontend tests
-# Requires: just platform-up && just backend-dev running in another terminal
-ci: backend-check frontend-check backend-test backend-perf backend-e2e frontend-test
+# Full pre-PR gate: backend checks + all tests + frontend check + frontend tests + playwright e2e
+# Requires: just platform-up && just dev-up running in another terminal
+ci: backend-check frontend-check backend-test backend-perf backend-e2e frontend-test frontend-e2e

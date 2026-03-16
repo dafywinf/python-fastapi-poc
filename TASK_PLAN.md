@@ -48,7 +48,8 @@
 - [x] **Layout:** Build the responsive App shell (Navbar/Sidebar).
 - [x] **API Layer:** Configure Fetch-based API client with Vite proxy for port 8000 communication.
 - [x] **Frontend Tests:** Vitest + allure-vitest; 47 tests across types, API client, list view, detail view.
-- [x] **CI Integration:** GitHub Actions `frontend` job (build, test, Allure artifact upload).
+- [x] **Frontend E2E Tests:** Playwright + Chromium; 12 tests across list, CRUD dialogs, and detail view (Page Object Model, real browser + real backend).
+- [x] **CI Integration:** GitHub Actions `frontend` and `frontend-e2e` jobs (build, Vitest, Playwright, Allure artifact uploads).
 - [x] **Documentation:** `docs/frontend.md` — architecture, tech stack, test guide, C4 diagram.
 
 ---

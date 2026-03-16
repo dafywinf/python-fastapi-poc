@@ -6,9 +6,13 @@ export default defineConfigWithVueTs(
     ignores: [
       'dist/',
       'node_modules/',
+      '.vite/',
       'allure-results/',
+      'allure-results-e2e/',
       'allure-report/',
       'coverage/',
+      'playwright-report/',
+      'test-results/',
       // Build tool configs live outside src/ and are not part of the app
       '*.config.*',
     ],

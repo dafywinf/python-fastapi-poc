@@ -91,10 +91,8 @@ just dev-down   # stop backend + frontend
 
 ## Running Tests
 
-Tests run against a real PostgreSQL container via `testcontainers` — no SQLite, no mocking.
-
 ```bash
-# Backend integration tests
+# Backend integration tests (real PostgreSQL via testcontainers)
 just backend-test
 
 # Backend tests with coverage report
@@ -103,11 +101,32 @@ just backend-test-cov
 # Performance tests (event-loop blocking demo, ~20s, requires Docker)
 just backend-perf
 
-# Frontend Vitest unit + component tests
+# Frontend Vitest unit + component tests (jsdom, mocked API — no backend needed)
 just frontend-test
+
+# Frontend Playwright E2E tests (real Chromium + real backend — requires just dev-up)
+just frontend-e2e
 
 # TypeScript type-check + build (frontend)
 just frontend-check
+
+# Full pre-PR gate — all of the above
+just ci
+```
+
+### Allure Reports
+
+```bash
+# Run everything then open a single combined report (requires platform-up + dev-up)
+just report
+
+# Per-suite reports (uses results already on disk from the last run)
+just backend-test-report    # backend integration + perf + obs E2E
+just frontend-test-report   # Vitest unit/component
+just frontend-e2e-report    # Playwright browser E2E
+
+# Clear all results directories without running tests
+just clean-reports
 ```
 
 ---
@@ -128,7 +147,14 @@ just frontend-check
 | `just frontend-dev` | Start the Vite frontend dev server (port 5173) |
 | `just frontend-dev-stop` | Stop the Vite dev server |
 | `just frontend-check` | TypeScript type-check + production build |
-| `just frontend-test` | Run frontend Vitest tests with Allure results |
+| `just frontend-test` | Run frontend Vitest unit/component tests with Allure results |
+| `just frontend-e2e-install` | Install Playwright Chromium browser binary (run once) |
+| `just frontend-e2e` | Run Playwright browser E2E tests (requires `just dev-up`) |
+| `just backend-test-report` | Run backend tests and open Allure report |
+| `just frontend-test-report` | Run Vitest tests and open Allure report |
+| `just frontend-e2e-report` | Run Playwright tests and open Allure report (requires `just dev-up`) |
+| `just report` | Clean results, run all tests, open combined Allure report (requires platform-up + dev-up) |
+| `just clean-reports` | Delete all Allure results directories |
 | `just platform-up` | Start all platform services (DB + monitoring stack) |
 | `just platform-down` | Stop all platform services |
 | `just obs-up` | Start Prometheus, Loki, and Grafana only |
@@ -187,8 +213,14 @@ curl -X POST http://localhost:8000/sequences/ \
 │   │   ├── types/      # TypeScript DTOs matching backend schemas
 │   │   ├── views/      # SequenceListView, SequenceDetailView
 │   │   ├── components/ # AppNavbar, AppSidebar
-│   │   └── __tests__/  # Vitest component + unit tests
-│   ├── vite.config.ts  # Proxy /sequences → localhost:8000
+│   │   └── __tests__/  # Vitest unit + component tests (jsdom, mocked API)
+│   ├── e2e/            # Playwright browser E2E tests (real Chromium + real backend)
+│   │   ├── pages/      # Page Object Model (SequenceListPage, dialogs, …)
+│   │   ├── sequences.list.spec.ts
+│   │   ├── sequences.crud.spec.ts
+│   │   └── sequences.detail.spec.ts
+│   ├── playwright.config.ts  # Chromium, allure reporter, webServer block
+│   ├── vite.config.ts        # Proxy /sequences → localhost:8000 (with HTML bypass)
 │   └── vitest.config.ts
 ├── monitoring/
 │   ├── prometheus/
@@ -227,7 +259,8 @@ curl -X POST http://localhost:8000/sequences/ \
 | Document | Description |
 |----------|-------------|
 | [Architecture](docs/architecture.md) | System architecture, key decisions, C4 diagrams |
-| [Frontend](docs/frontend.md) | SPA architecture, tech stack, test guide |
+| [Frontend](docs/frontend.md) | SPA architecture, tech stack, Playwright E2E guide |
+| [Testing Strategy](docs/testing.md) | All test layers — philosophy, data strategy, Allure, CI mapping |
 | [Python Toolchain](docs/python-toolchain.md) | How pyenv, Poetry, `.venv`, and your IDE relate |
 
 ---

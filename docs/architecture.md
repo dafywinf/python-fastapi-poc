@@ -6,10 +6,11 @@ This project is a full-stack sequence management application demonstrating produ
 patterns across a synchronous Python backend and a modern TypeScript SPA. The backend uses
 layered architecture, real-database integration tests, dependency injection, structured
 exception handling, and a full observability stack (Prometheus + Grafana + Loki). The
-frontend is a Vite + Vue 3 SPA with PrimeVue (unstyled) and Tailwind CSS. Both layers are
+frontend is a Vite + Vue 3 SPA with native `<dialog>` modals and Tailwind CSS. Both layers are
 intentionally kept small so that each pattern is legible in isolation.
 
-See also: [`docs/frontend.md`](./frontend.md) for the SPA-specific architecture.
+See also: [`docs/frontend.md`](./frontend.md) for the SPA-specific architecture and
+[`docs/testing.md`](./testing.md) for the full testing strategy across all layers.
 
 ---
 
@@ -75,14 +76,16 @@ All route handlers are decorated with `@handle_exception(logger)` from
 
 ```mermaid
 graph TD
-    dev["👤 Developer"]
+    dev["👤 Developer / User"]
+    spa["🖥️ Vue 3 SPA<br/>Vite dev server — port 5173<br/>Sequence Manager UI"]
     api["🐍 FastAPI Sequence Manager<br/>Python 3.12 — sync handlers<br/>CRUD API + /metrics endpoint"]
     postgres[("🐘 PostgreSQL<br/>Sequence records")]
     prometheus["📈 Prometheus<br/>Time-series metrics store"]
     loki["🪵 Grafana Loki<br/>Log aggregation store"]
     grafana["📊 Grafana<br/>Metrics + Logs dashboards"]
 
-    dev -->|"CRUD requests<br/>HTTP REST"| api
+    dev -->|"Uses browser UI"| spa
+    spa -->|"CRUD requests<br/>HTTP REST (via Vite proxy)"| api
     api -->|"Reads & writes sequences<br/>SQL via psycopg2"| postgres
     prometheus -->|"Scrapes every 15s<br/>GET /metrics"| api
     api -->|"Pushes JSON log lines<br/>HTTP POST /loki/api/v1/push"| loki
@@ -97,24 +100,31 @@ graph TD
 
 ```mermaid
 graph TD
-    dev["👤 Developer"]
+    dev["👤 Developer / User"]
+
+    spa["🖥️ Vue 3 SPA<br/>Vite — port 5173<br/>Host process<br/>TypeScript + native dialog"]
 
     api["🐍 API<br/>Python 3.12 / FastAPI<br/>Sync handlers — thread pool<br/>Host process — port 8000"]
 
-    subgraph compose["Docker Compose (monitoring profile)"]
+    playwright["🎭 Playwright<br/>Chromium E2E tests<br/>e2e/*.spec.ts"]
+
+    subgraph compose["Docker Compose (default + monitoring profile)"]
         postgres[("🐘 PostgreSQL 16<br/>port 5432<br/>Stores sequences table")]
         prometheus["📈 Prometheus<br/>port 9090<br/>Scrapes host.docker.internal:8000/metrics<br/>every 15s — stores time-series"]
         loki["🪵 Grafana Loki 3.x<br/>port 3100<br/>Receives JSON log lines via HTTP push<br/>Stores and indexes log streams"]
         grafana["📊 Grafana<br/>port 3000<br/>Auto-provisioned datasources + dashboards<br/>FastAPI Service (RED) + FastAPI Logs"]
     end
 
-    dev -->|"HTTP REST<br/>port 8000"| api
+    dev -->|"Browser — port 5173"| spa
+    spa -->|"HTTP REST via proxy<br/>port 8000"| api
     api -->|"psycopg2<br/>port 5432"| postgres
     prometheus -->|"HTTP GET /metrics<br/>port 8000"| api
     api -->|"HTTP POST /loki/api/v1/push<br/>port 3100"| loki
     grafana -->|"PromQL<br/>port 9090"| prometheus
     grafana -->|"LogQL<br/>port 3100"| loki
-    dev -->|"Browser<br/>port 3000"| grafana
+    dev -->|"Browser — port 3000"| grafana
+    playwright -->|"drives real browser<br/>port 5173"| spa
+    playwright -->|"test setup/teardown<br/>direct REST — port 8000"| api
 ```
 
 > **Docker Compose profiles:** PostgreSQL runs under the default profile (always up).
