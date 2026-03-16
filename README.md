@@ -1,6 +1,6 @@
 # python-fastapi-poc
 
-A FastAPI application for managing **Sequence** entities — synchronous, threaded architecture using FastAPI + SQLAlchemy + PostgreSQL + Alembic, with a full Prometheus + Loki + Grafana observability stack (metrics, logs, dashboards).
+A full-stack sequence management application — synchronous FastAPI backend with SQLAlchemy + PostgreSQL + Alembic, a Vue 3 + TypeScript SPA frontend, and a full Prometheus + Loki + Grafana observability stack.
 
 ---
 
@@ -9,7 +9,7 @@ A FastAPI application for managing **Sequence** entities — synchronous, thread
 ### 1. Install system dependencies (macOS)
 
 ```bash
-brew install pyenv poetry just
+brew install pyenv poetry just node
 ```
 
 Docker Desktop must also be installed and running.
@@ -26,13 +26,19 @@ pyenv install $(cat .python-version)
 poetry config virtualenvs.in-project true
 ```
 
-### 4. Install project dependencies
+### 4. Install backend dependencies
 
 ```bash
 poetry install
 ```
 
-### 5. Configure environment variables
+### 5. Install frontend dependencies
+
+```bash
+cd frontend && npm ci && cd ..
+```
+
+### 6. Configure environment variables
 
 The `.env` file is pre-configured for the Docker Compose database:
 
@@ -48,7 +54,7 @@ LOKI_URL=http://localhost:3100
 
 Leave `LOKI_URL` unset (the default) to disable log shipping — the app and all tests start cleanly without it.
 
-### 6. Start all platform services and run migrations
+### 7. Start all platform services and run migrations
 
 ```bash
 just platform-up
@@ -57,14 +63,22 @@ just bootstrap
 
 `platform-up` starts PostgreSQL, Prometheus, Loki, and Grafana. `bootstrap` waits for the database to be healthy then applies all Alembic migrations.
 
-### 7. Start the development server
+### 8. Start the full development stack
 
 ```bash
-just dev
+just dev-up
+```
+
+This starts the backend (port 8000) and frontend (port 5173) in the background and confirms both are healthy. Logs are written to `/tmp/backend.log` and `/tmp/frontend.log`.
+
+```bash
+just dev-logs   # tail both logs (Ctrl-C to stop)
+just dev-down   # stop backend + frontend
 ```
 
 | URL | Description |
 |-----|-------------|
+| <http://localhost:5173> | **Vue 3 SPA — main UI** |
 | <http://localhost:8000/docs> | Interactive Swagger UI |
 | <http://localhost:8000/redoc> | ReDoc documentation |
 | <http://localhost:8000/health> | Liveness check |
@@ -80,14 +94,20 @@ just dev
 Tests run against a real PostgreSQL container via `testcontainers` — no SQLite, no mocking.
 
 ```bash
-# Run the full test suite
-just test
+# Backend integration tests
+just backend-test
 
-# Run with a coverage report
-just test-cov
+# Backend tests with coverage report
+just backend-test-cov
 
-# Run performance tests (binds real ports, takes ~20s, requires Docker)
-just perf
+# Performance tests (event-loop blocking demo, ~20s, requires Docker)
+just backend-perf
+
+# Frontend Vitest unit + component tests
+just frontend-test
+
+# TypeScript type-check + build (frontend)
+just frontend-check
 ```
 
 ---
@@ -96,23 +116,32 @@ just perf
 
 | Command | Description |
 |---------|-------------|
-| `just dev` | Start the development server with hot-reload |
-| `just platform-up` | Start all platform services (DB + Prometheus + Grafana) |
+| `just dev-up` | Start backend + frontend in background; confirms both healthy |
+| `just dev-down` | Stop backend + frontend |
+| `just dev-logs` | Tail `/tmp/backend.log` and `/tmp/frontend.log` |
+| `just backend-dev` | Start the FastAPI backend only (foreground) |
+| `just backend-dev-stop` | Stop the FastAPI backend |
+| `just backend-check` | Ruff lint + basedpyright type-check |
+| `just backend-test` | Run the backend integration test suite |
+| `just backend-test-cov` | Run backend tests with a terminal coverage report |
+| `just backend-perf` | Run performance tests (event-loop blocking demo, requires Docker) |
+| `just frontend-dev` | Start the Vite frontend dev server (port 5173) |
+| `just frontend-dev-stop` | Stop the Vite dev server |
+| `just frontend-check` | TypeScript type-check + production build |
+| `just frontend-test` | Run frontend Vitest tests with Allure results |
+| `just platform-up` | Start all platform services (DB + monitoring stack) |
 | `just platform-down` | Stop all platform services |
 | `just obs-up` | Start Prometheus, Loki, and Grafana only |
 | `just obs-down` | Stop Prometheus, Loki, and Grafana |
 | `just obs-logs` | Tail all monitoring container logs |
 | `just loki-logs` | Tail Loki container logs only |
-| `just test` | Run the test suite |
-| `just test-cov` | Run tests with a terminal coverage report |
-| `just perf` | Run performance tests (event-loop blocking demo, requires Docker) |
 | `just bootstrap` | Start the DB container and apply all migrations |
 | `just migrate` | Apply pending Alembic migrations |
 | `just makemigrations "message"` | Generate a new migration from model changes |
 | `just db-up` | Start the PostgreSQL container |
 | `just db-down` | Stop and remove all containers |
 | `just db-logs` | Tail PostgreSQL container logs |
-| `just ci` | Full pre-PR gate: lint + type-check + tests + perf + e2e (requires platform-up + dev) |
+| `just ci` | Full pre-PR gate: all checks + all tests (requires platform-up + backend-dev) |
 
 ---
 
@@ -152,6 +181,15 @@ curl -X POST http://localhost:8000/sequences/ \
 │   ├── routes.py       # API route handlers (sync def)
 │   ├── services.py     # Business logic
 │   └── exceptions.py   # Exception handling decorator
+├── frontend/
+│   ├── src/
+│   │   ├── api/        # Fetch-based API client (proxied to port 8000)
+│   │   ├── types/      # TypeScript DTOs matching backend schemas
+│   │   ├── views/      # SequenceListView, SequenceDetailView
+│   │   ├── components/ # AppNavbar, AppSidebar
+│   │   └── __tests__/  # Vitest component + unit tests
+│   ├── vite.config.ts  # Proxy /sequences → localhost:8000
+│   └── vitest.config.ts
 ├── monitoring/
 │   ├── prometheus/
 │   │   └── prometheus.yml          # Scrape config (targets host:8000)
@@ -171,6 +209,9 @@ curl -X POST http://localhost:8000/sequences/ \
 │       ├── helpers.py
 │       ├── test_event_loop_blocking.py
 │       └── test_db_event_loop_blocking.py
+├── docs/
+│   ├── architecture.md # System architecture and key decisions
+│   └── frontend.md     # Frontend architecture, tech stack, test guide
 ├── .env                # Database credentials (not committed)
 ├── .python-version     # pyenv version pin
 ├── alembic.ini
@@ -185,7 +226,9 @@ curl -X POST http://localhost:8000/sequences/ \
 
 | Document | Description |
 |----------|-------------|
-| [Python Toolchain](docs/python-toolchain.md) | How pyenv, Poetry, `.venv`, and your IDE relate — including what each command writes to your machine |
+| [Architecture](docs/architecture.md) | System architecture, key decisions, C4 diagrams |
+| [Frontend](docs/frontend.md) | SPA architecture, tech stack, test guide |
+| [Python Toolchain](docs/python-toolchain.md) | How pyenv, Poetry, `.venv`, and your IDE relate |
 
 ---
 
@@ -197,3 +240,4 @@ curl -X POST http://localhost:8000/sequences/ \
 - **Exception handling**: `@handle_exception(logger)` captures full tracebacks via `logger.exception`.
 - **Migrations**: Alembic autogenerate — edit `backend/models.py`, then run `just makemigrations "describe change"` followed by `just migrate`.
 - **Observability**: `prometheus-fastapi-instrumentator` exposes RED metrics at `/metrics`. Prometheus scrapes every 15s; the FastAPI Observability dashboard is pre-provisioned. Structured JSON logs are shipped directly to Loki via `python-logging-loki` and queryable in the FastAPI Logs Grafana dashboard.
+- **Frontend**: Vite dev server proxies `/sequences` and `/health` to the backend at port 8000, so both run independently and no CORS config is needed in development.

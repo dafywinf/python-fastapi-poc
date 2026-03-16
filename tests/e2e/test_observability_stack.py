@@ -48,9 +48,9 @@ class TestPrometheus:
         fastapi_targets = [t for t in targets if t["labels"].get("job") == "fastapi"]
 
         assert len(fastapi_targets) == 1, "Expected exactly one fastapi scrape target"
-        assert fastapi_targets[0]["health"] == "up", (
-            f"fastapi target is not up: {fastapi_targets[0]['lastError']}"
-        )
+        assert (
+            fastapi_targets[0]["health"] == "up"
+        ), f"fastapi target is not up: {fastapi_targets[0]['lastError']}"
 
     def test_request_duration_metric_has_data(self) -> None:
         # Generate at least one request so the metric is non-zero
@@ -87,17 +87,17 @@ class TestGrafana:
             health = client.get(f"/api/datasources/uid/{uid}/health")
 
         assert health.status_code == 200
-        assert health.json()["status"] == "OK", (
-            f"Prometheus datasource unhealthy: {health.json()}"
-        )
+        assert (
+            health.json()["status"] == "OK"
+        ), f"Prometheus datasource unhealthy: {health.json()}"
 
     def test_dashboard_is_provisioned(self) -> None:
         with _grafana() as client:
             response = client.get(f"/api/dashboards/uid/{DASHBOARD_UID}")
 
-        assert response.status_code == 200, (
-            f"Dashboard '{DASHBOARD_UID}' not found in Grafana"
-        )
+        assert (
+            response.status_code == 200
+        ), f"Dashboard '{DASHBOARD_UID}' not found in Grafana"
         title = response.json()["dashboard"]["title"]
         assert "FastAPI" in title, f"Unexpected dashboard title: {title}"
 
@@ -155,12 +155,7 @@ class TestGrafana:
                         "to": "now",
                     },
                 )
-                frames = (
-                    result.json()
-                    .get("results", {})
-                    .get("A", {})
-                    .get("frames", [])
-                )
+                frames = result.json().get("results", {}).get("A", {}).get("frames", [])
                 has_data = any(
                     len(f.get("data", {}).get("values", [[]])[0]) > 0
                     for f in frames
@@ -213,16 +208,16 @@ class TestLoki:
             uid = response.json()["uid"]
             health = client.get(f"/api/datasources/uid/{uid}/health")
         assert health.status_code == 200
-        assert health.json()["status"] == "OK", (
-            f"Loki datasource unhealthy: {health.json()}"
-        )
+        assert (
+            health.json()["status"] == "OK"
+        ), f"Loki datasource unhealthy: {health.json()}"
 
     def test_loki_dashboard_is_provisioned(self) -> None:
         with _grafana() as client:
             response = client.get(f"/api/dashboards/uid/{LOKI_DASHBOARD_UID}")
-        assert response.status_code == 200, (
-            f"Dashboard '{LOKI_DASHBOARD_UID}' not found"
-        )
+        assert (
+            response.status_code == 200
+        ), f"Dashboard '{LOKI_DASHBOARD_UID}' not found"
         assert response.json()["dashboard"]["title"] == "FastAPI Logs"
 
     def test_loki_dashboard_panels_have_data(self) -> None:
@@ -303,12 +298,7 @@ class TestLoki:
                         "to": "now",
                     },
                 )
-                frames = (
-                    result.json()
-                    .get("results", {})
-                    .get("A", {})
-                    .get("frames", [])
-                )
+                frames = result.json().get("results", {}).get("A", {}).get("frames", [])
                 has_data = any(
                     len(f.get("data", {}).get("values", [[]])[0]) > 0
                     for f in frames
