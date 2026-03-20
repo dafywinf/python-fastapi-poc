@@ -2,7 +2,7 @@
   <div class="list-view">
     <div class="list-view__header">
       <h1 class="list-view__title">Sequences</h1>
-      <button class="btn btn--primary" @click="openCreate">+ New Sequence</button>
+      <button v-if="isAuthenticated" class="btn btn--primary" @click="openCreate">+ New Sequence</button>
     </div>
 
     <!-- Error banner -->
@@ -45,8 +45,8 @@
             <td class="col-desc text-muted">{{ seq.description ?? '—' }}</td>
             <td class="text-muted">{{ formatDate(seq.created_at) }}</td>
             <td class="col-actions">
-              <button class="btn-icon" title="Edit" @click="openEdit(seq)">✏️</button>
-              <button class="btn-icon btn-icon--danger" title="Delete" @click="openDelete(seq)">🗑️</button>
+              <button v-if="isAuthenticated" class="btn-icon" title="Edit" @click="openEdit(seq)">✏️</button>
+              <button v-if="isAuthenticated" class="btn-icon btn-icon--danger" title="Delete" @click="openDelete(seq)">🗑️</button>
             </td>
           </tr>
         </tbody>
@@ -114,6 +114,8 @@ import { ref, computed, onMounted, h } from 'vue'
 import { sequencesApi } from '../api/sequences'
 import type { Sequence } from '../types/sequence'
 import { formatDate } from '../utils/date'
+import { useAuth } from '../composables/useAuth'
+const { isAuthenticated } = useAuth()
 
 // ── Sort icon sub-component ────────────────────────────────────────────────
 const SortIcon = {

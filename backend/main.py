@@ -7,10 +7,10 @@ from fastapi import FastAPI
 from prometheus_fastapi_instrumentator import Instrumentator
 from pythonjsonlogger.json import JsonFormatter
 
-from backend.auth_routes import router as auth_router
 from backend.config import settings
 from backend.exceptions import handle_exception
 from backend.routes import router
+from backend.user_routes import router as user_router
 
 logging.config.dictConfig(
     {
@@ -61,8 +61,13 @@ app = FastAPI(
 
 Instrumentator().instrument(app).expose(app)  # pyright: ignore[reportUnknownMemberType]
 
-app.include_router(auth_router)
 app.include_router(router)
+app.include_router(user_router)
+
+if settings.enable_password_auth:
+    from backend.auth_routes import router as auth_router
+
+    app.include_router(auth_router)
 
 
 @app.get("/health", tags=["health"])

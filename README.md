@@ -40,15 +40,33 @@ cd frontend && npm ci && cd ..
 
 ### 6. Configure environment variables
 
-The `.env` file is pre-configured for the Docker Compose database. A minimal `.env` looks like:
+Copy the example file and fill in your credentials:
+
+```bash
+cp .env.example .env
+```
+
+A minimal `.env` for local development (sequences CRUD only, no Google login):
 
 ```env
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/sequences_db
 JWT_SECRET_KEY=change-me-to-a-long-random-secret
-ADMIN_PASSWORD_HASH=$2b$12$...  # generate with: python -c "import bcrypt; print(bcrypt.hashpw(b'your-password', bcrypt.gensalt()).decode())"
+ADMIN_PASSWORD_HASH=$2b$12$...  # generate: python -c "import bcrypt; print(bcrypt.hashpw(b'your-pass', bcrypt.gensalt()).decode())"
+ENABLE_PASSWORD_AUTH=true       # enables POST /auth/token; set false in production
+FRONTEND_URL=http://localhost:5173
+BACKEND_URL=http://localhost:8000
 ```
 
-To enable Loki log shipping, uncomment `LOKI_URL` in `.env` **after** starting the monitoring stack:
+To enable **Google OAuth2 login**, add your Google Cloud credentials:
+
+```env
+GOOGLE_CLIENT_ID=<your-client-id>.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=<your-client-secret>
+```
+
+See [docs/google-oauth-setup.md](docs/google-oauth-setup.md) for the full Google Cloud Console walkthrough.
+
+To enable Loki log shipping, add `LOKI_URL` **after** starting the monitoring stack:
 
 ```env
 LOKI_URL=http://localhost:3100
@@ -179,7 +197,11 @@ just clean-reports
 |--------|------|------|--------|-------------|
 | `GET` | `/health` | — | `200` | Liveness check |
 | `GET` | `/metrics` | — | `200` | Prometheus metrics |
-| `POST` | `/auth/token` | — | `200` / `401` | Obtain a JWT access token |
+| `POST` | `/auth/token` | — | `200` / `401` | Obtain a JWT via password grant (requires `ENABLE_PASSWORD_AUTH=true`) |
+| `GET` | `/auth/google/login` | — | `302` | Begin Google OAuth2 flow (redirects to Google) |
+| `GET` | `/auth/google/callback` | — | `302` | Google OAuth2 callback — exchanges code, upserts user, returns JWT |
+| `GET` | `/users/` | — | `200` | List all registered users (public) |
+| `GET` | `/users/me` | Bearer | `200` / `401` / `404` | Retrieve the authenticated user's profile |
 | `POST` | `/sequences/` | Bearer | `201` / `401` | Create a new Sequence |
 | `GET` | `/sequences/` | — | `200` | List all Sequences (public) |
 | `GET` | `/sequences/{id}` | — | `200` / `404` | Retrieve a Sequence by ID (public) |
@@ -188,7 +210,12 @@ just clean-reports
 
 ### Authentication
 
-The API uses **OAuth2 Password Bearer** tokens. Obtain a token then include it in write requests:
+The application supports two authentication methods:
+
+**Google OAuth2 (primary)** — click "Sign in with Google" in the UI or navigate to `/auth/google/login`.
+See [docs/google-oauth-setup.md](docs/google-oauth-setup.md) for setup.
+
+**Password grant (for tests / scripts)** — requires `ENABLE_PASSWORD_AUTH=true` in `.env`:
 
 ```bash
 # 1. Get a token
@@ -220,22 +247,26 @@ Read operations (`GET`) are public and do not require a token.
 │   ├── routes.py       # API route handlers (sync def)
 │   ├── services.py     # Business logic
 │   ├── security.py     # JWT helpers, OAuth2 dependency providers (WriteDep)
-│   ├── auth_routes.py  # POST /auth/token — OAuth2 password grant
+│   ├── auth_routes.py  # POST /auth/token — OAuth2 password grant (ENABLE_PASSWORD_AUTH)
+│   ├── google_oauth.py # Google OAuth2 helpers (state store, token exchange, user info)
+│   ├── user_routes.py  # GET /auth/google/login+callback, GET /users/, GET /users/me
 │   └── exceptions.py   # Exception handling decorator
 ├── frontend/
 │   ├── src/
-│   │   ├── api/        # Fetch-based API client (proxied to port 8000)
-│   │   ├── types/      # TypeScript DTOs matching backend schemas
-│   │   ├── views/      # SequenceListView, SequenceDetailView
-│   │   ├── components/ # AppNavbar, AppSidebar
-│   │   └── __tests__/  # Vitest unit + component tests (jsdom, mocked API)
-│   ├── e2e/            # Playwright browser E2E tests (real Chromium + real backend)
-│   │   ├── pages/      # Page Object Model (SequenceListPage, dialogs, …)
+│   │   ├── api/          # Fetch-based API client (proxied to port 8000)
+│   │   ├── composables/  # useAuth — token, isAuthenticated, user, login/logout
+│   │   ├── types/        # TypeScript DTOs matching backend schemas
+│   │   ├── views/        # SequenceListView, SequenceDetailView, LoginView, AuthCallbackView, UsersView
+│   │   ├── components/   # AppNavbar, AppSidebar
+│   │   └── __tests__/    # Vitest unit + component tests (jsdom, mocked API)
+│   ├── e2e/              # Playwright browser E2E tests (real Chromium + real backend)
+│   │   ├── pages/        # Page Object Model (SequenceListPage, dialogs, …)
 │   │   ├── sequences.list.spec.ts
 │   │   ├── sequences.crud.spec.ts
-│   │   └── sequences.detail.spec.ts
+│   │   ├── sequences.detail.spec.ts
+│   │   └── auth.spec.ts  # Google OAuth login flow + auth-gated UI assertions
 │   ├── playwright.config.ts  # Chromium, allure reporter, webServer block
-│   ├── vite.config.ts        # Proxy /sequences → localhost:8000 (with HTML bypass)
+│   ├── vite.config.ts        # Proxy /sequences, /auth, /users, /health → localhost:8000
 │   └── vitest.config.ts
 ├── monitoring/
 │   ├── prometheus/
@@ -275,6 +306,7 @@ Read operations (`GET`) are public and do not require a token.
 |----------|-------------|
 | [Architecture](docs/architecture.md) | System architecture, key decisions, C4 diagrams |
 | [Frontend](docs/frontend.md) | SPA architecture, tech stack, Playwright E2E guide |
+| [Google OAuth2 Setup](docs/google-oauth-setup.md) | Step-by-step Google Cloud Console guide + troubleshooting |
 | [Testing Strategy](docs/testing.md) | All test layers — philosophy, data strategy, Allure, CI mapping |
 | [Python Toolchain](docs/python-toolchain.md) | How pyenv, Poetry, `.venv`, and your IDE relate |
 
@@ -288,5 +320,6 @@ Read operations (`GET`) are public and do not require a token.
 - **Exception handling**: `@handle_exception(logger)` captures full tracebacks via `logger.exception`.
 - **Migrations**: Alembic autogenerate — edit `backend/models.py`, then run `just makemigrations "describe change"` followed by `just migrate`.
 - **Observability**: `prometheus-fastapi-instrumentator` exposes RED metrics at `/metrics`. Prometheus scrapes every 15s; the FastAPI Observability dashboard is pre-provisioned. Structured JSON logs are shipped directly to Loki via `python-logging-loki` and queryable in the FastAPI Logs Grafana dashboard.
-- **Frontend**: Vite dev server proxies `/sequences` and `/health` to the backend at port 8000, so both run independently and no CORS config is needed in development.
-- **Authentication**: JWT Bearer tokens via `python-jose` (HS256). Write endpoints (`POST`/`PATCH`/`DELETE`) require a valid token; `GET` endpoints are public. Credentials are config-driven (`JWT_SECRET_KEY`, `ADMIN_PASSWORD_HASH`) — no database user table in the MVP.
+- **Frontend**: Vite dev server proxies `/sequences`, `/auth`, `/users`, and `/health` to the backend at port 8000, so both run independently and no CORS config is needed in development. The `/auth` proxy has **no HTML bypass** — OAuth redirects must reach the backend, not the SPA shell.
+- **Authentication**: JWT Bearer tokens via `python-jose` (HS256). Write endpoints (`POST`/`PATCH`/`DELETE`) require a valid token; `GET` endpoints are public. Google OAuth2 is the primary login method (backend-driven Authorization Code Flow — the client secret never leaves the server). A password grant (`POST /auth/token`) is available when `ENABLE_PASSWORD_AUTH=true` — used by E2E tests and scripts. See [docs/google-oauth-setup.md](docs/google-oauth-setup.md).
+- **Single-worker constraint**: The OAuth2 CSRF state store is in-memory (a Python dict). Run the backend with a single worker (`just backend-dev` uses `--workers 1`). Multi-worker deployments would require a shared store (e.g. Redis).

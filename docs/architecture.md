@@ -5,7 +5,7 @@
 This project is a full-stack sequence management application demonstrating production-grade
 patterns across a synchronous Python backend and a modern TypeScript SPA. The backend uses
 layered architecture, real-database integration tests, dependency injection, structured
-exception handling, and a full observability stack (Prometheus + Grafana + Loki). The
+exception handling, a full observability stack (Prometheus + Grafana + Loki), and Google OAuth2 social login with JWT-based session management. The
 frontend is a Vite + Vue 3 SPA with native `<dialog>` modals and Tailwind CSS. Both layers are
 intentionally kept small so that each pattern is legible in isolation.
 
@@ -87,6 +87,22 @@ Write endpoints (`POST`/`PATCH`/`DELETE`) are gated by `WriteDep` — an
 (`ADMIN_PASSWORD_HASH`, bcrypt-hashed) are stored in config; no `users` database table
 is required in the MVP. The `POST /auth/token` endpoint implements the OAuth2 password
 grant and returns a signed JWT.
+
+### Google OAuth2 Authentication (Backend-driven Authorization Code Flow)
+
+Authentication uses Google's OAuth2 Authorization Code Flow with server-side token exchange.
+The browser is redirected to `/auth/google/login`, which generates a CSRF state token and
+redirects to Google's consent screen. Google redirects back to `/auth/google/callback`, where
+the backend exchanges the authorization code for a Google access token (via `httpx` in sync
+mode), fetches the user profile, upserts the `users` table row, and issues a project-scoped
+JWT. The JWT is passed to the SPA as a `?token=` query parameter on a redirect to the frontend
+`/auth/callback` page.
+
+The client secret never leaves the backend. CSRF is prevented via the `state` parameter.
+The in-memory state store requires single-worker deployment (the default for `just backend-dev`).
+
+Key files: `backend/google_oauth.py` (OAuth2 protocol helpers), `backend/user_routes.py`
+(OAuth endpoints + `/users/` + `/users/me`).
 
 ---
 
@@ -190,7 +206,7 @@ graph TD
 
 ## Data Model
 
-The single table managed by this service:
+### `sequences` table
 
 | Column | Type | Notes |
 |--------|------|-------|
@@ -198,6 +214,21 @@ The single table managed by this service:
 | `name` | String | Required |
 | `description` | String | Nullable |
 | `created_at` | DateTime | Server default `now()`, set by PostgreSQL |
+
+### `users` table
+
+Persists Google account profiles on first login and updates `name`/`picture` on subsequent
+logins. The `email` column is the JWT subject — used to resolve `WriteDep` to a full user
+object in the `/users/me` endpoint.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | Integer PK | Auto-increment |
+| `google_id` | String UNIQUE | Stable Google account identifier |
+| `email` | String UNIQUE | JWT subject; displayed in UI |
+| `name` | String | Display name from Google profile |
+| `picture` | String (nullable) | Avatar URL — refreshed on every login |
+| `created_at` | DateTime(tz) | First login timestamp |
 
 Schema is defined in `backend/models.py` (SQLAlchemy `Mapped` / `mapped_column`) and
 managed by Alembic migrations under `alembic/versions/`.
