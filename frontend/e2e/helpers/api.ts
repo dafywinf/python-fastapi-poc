@@ -45,6 +45,14 @@ export async function injectAuthToken(page: Page): Promise<void> {
   await page.evaluate((t) => localStorage.setItem('access_token', t), token)
 }
 
+export async function listSequences(): Promise<Array<{ id: number }>> {
+  const ctx = await pwRequest.newContext({ baseURL: BASE_API })
+  const res = await ctx.get('/sequences/')
+  const body = (await res.json()) as Array<{ id: number }>
+  await ctx.dispose()
+  return body
+}
+
 export async function deleteSequence(id: number): Promise<void> {
   const token = await getToken()
   const ctx = await pwRequest.newContext({

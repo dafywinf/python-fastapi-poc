@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { allure } from 'allure-playwright'
 import { SequenceListPage } from './pages/SequenceListPage'
-import { createSequence, deleteSequence } from './helpers/api'
+import { createSequence, deleteSequence, listSequences, injectAuthToken } from './helpers/api'
 
 test.describe('Sequence List View', () => {
   test.beforeEach(async () => {
@@ -11,6 +11,8 @@ test.describe('Sequence List View', () => {
   })
 
   test('renders heading and new button', async ({ page }) => {
+    // The new button is auth-gated — inject a token so it renders.
+    await injectAuthToken(page)
     const listPage = new SequenceListPage(page)
     await listPage.goto()
     await expect(listPage.heading).toBeVisible()
@@ -19,17 +21,14 @@ test.describe('Sequence List View', () => {
   })
 
   test('shows empty state when no sequences exist', async ({ page }) => {
+    // Clear all sequences so we control the empty state
+    const existing = await listSequences()
+    await Promise.all(existing.map((s) => deleteSequence(s.id)))
+
     const listPage = new SequenceListPage(page)
     await listPage.goto()
-    // rowCount() already waits for loading to clear before counting
-    const count = await listPage.rowCount()
-    if (count === 0) {
-      await expect(listPage.emptyState).toBeVisible()
-      await test.info().attach('empty state', { body: await page.screenshot(), contentType: 'image/png' })
-    } else {
-      // Environment already has data — skip rather than fail
-      test.skip()
-    }
+    await expect(listPage.emptyState).toBeVisible()
+    await test.info().attach('empty state', { body: await page.screenshot(), contentType: 'image/png' })
   })
 
   test('renders row after API-created sequence', async ({ page }) => {

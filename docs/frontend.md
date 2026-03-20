@@ -49,11 +49,17 @@ All API calls use relative paths (e.g. `/sequences/`). In development, Vite's
 CORS. In production the same relative paths are served from the same origin as
 the SPA (or handled by a reverse proxy). No `VITE_API_URL` env var is needed.
 
-The proxy rule includes a `bypass` function: browser navigation requests
+The proxy rules use a `bypass` function for routes where both browser navigation
+and API `fetch` calls are expected (e.g. `/sequences`, `/users`): navigation requests
 (Accept: `text/html`) are served `index.html` so Vue Router handles the route
-client-side, while API `fetch` calls (Accept: `application/json`) are forwarded
-to the backend. Without this, navigating directly to `/sequences` in a browser —
-or in a Playwright test — would return JSON instead of the SPA shell.
+client-side, while `fetch` calls (Accept: `application/json`) are forwarded to the
+backend. Without this, navigating directly to `/sequences` in a browser — or in a
+Playwright test — would return JSON instead of the SPA shell.
+
+The `/auth` proxy is configured **without** a bypass. Google's OAuth2 redirect
+lands on `/auth/google/callback` as a browser navigation, but it **must** reach
+the FastAPI backend — not the SPA shell. Adding a bypass to `/auth` would serve
+`index.html` for that redirect and break the OAuth flow entirely.
 
 ### Fetch-based API client (no Axios)
 
@@ -66,6 +72,24 @@ extra dependency while remaining straightforward to test — tests stub
 Create / Edit / Delete modals use the native HTML `<dialog>` element with
 `showModal()` / `close()`. This provides built-in focus-trapping, `::backdrop`
 styling, and accessibility semantics without a modal library.
+
+### Auth state: `useAuth` composable
+
+Authentication state is managed by `frontend/src/composables/useAuth.ts` — a single source
+of truth backed by a Vue `ref<string | null>` initialised from `localStorage.getItem('access_token')`.
+
+Using a `ref` (rather than reading localStorage directly inside a computed) means that
+`setToken()` and `logout()` trigger reactive UI updates immediately in the same tick without
+needing a component re-mount.
+
+The composable exposes:
+- `isAuthenticated` — `ComputedRef<boolean>`: true if token exists and `exp` claim is in the future
+- `user` — `ComputedRef<{ email, name } | null>`: decoded from the JWT payload
+- `setToken(t)` — called by `AuthCallbackView` after the OAuth redirect
+- `login()` / `logout()` — navigate to `/login` or clear state and go home
+
+JWT payloads use base64url encoding; `decodePayload` normalises to standard base64 before
+calling `atob()` so it works correctly with real JWTs from the backend.
 
 ---
 
@@ -81,32 +105,41 @@ frontend/
 │   │   ├── SequenceListView.test.ts
 │   │   └── SequenceDetailView.test.ts
 │   ├── api/
-│   │   └── sequences.ts     # Typed fetch wrapper for /sequences endpoints
+│   │   ├── sequences.ts     # Typed fetch wrapper for /sequences endpoints
+│   │   └── users.ts         # Typed fetch wrapper for /users endpoints
+│   ├── composables/
+│   │   └── useAuth.ts       # Auth state — token, isAuthenticated, user, login/logout
 │   ├── components/
 │   │   └── layout/
-│   │       ├── AppNavbar.vue    # Top navigation bar
+│   │       ├── AppNavbar.vue    # Top navigation bar (shows user email + logout when authenticated)
 │   │       └── AppSidebar.vue   # Left sidebar (hidden on mobile)
 │   ├── router/
 │   │   └── index.ts         # Vue Router — HTML5 history
 │   ├── types/
 │   │   └── sequence.ts      # Sequence, SequenceCreate, SequenceUpdate DTOs
 │   ├── views/
-│   │   ├── SequenceListView.vue   # Sortable table + Create/Edit/Delete dialogs
-│   │   └── SequenceDetailView.vue # Read-only detail + Edit/Delete actions
+│   │   ├── SequenceListView.vue   # Sortable table + Create/Edit/Delete dialogs (write actions auth-gated)
+│   │   ├── SequenceDetailView.vue # Read-only detail + Edit/Delete actions
+│   │   ├── LoginView.vue          # "Sign in with Google" — window.location.href to /auth/google/login
+│   │   ├── AuthCallbackView.vue   # Reads ?token= from URL, calls setToken(), navigates to /
+│   │   └── UsersView.vue          # Lists all registered users (public)
 │   ├── App.vue              # Root component — Navbar + Sidebar + <RouterView>
 │   ├── main.ts              # App bootstrap — Vue, Pinia, Router, PrimeVue
 │   └── style.css            # Global CSS — Tailwind base/components/utilities
 ├── e2e/                     # Playwright browser E2E tests (real Chromium + real backend)
+│   ├── helpers/
+│   │   └── api.ts           # injectAuthToken, createSequence, deleteSequence, listSequences
 │   ├── pages/
 │   │   ├── SequenceListPage.ts  # Page Object — list view locators & helpers
 │   │   ├── SequenceDetailPage.ts# Page Object — detail view locators
 │   │   └── dialogs.ts           # FormDialog + DeleteDialog helpers
+│   ├── auth.spec.ts             # Google OAuth login flow + auth-gated UI assertions
 │   ├── sequences.list.spec.ts   # Heading, empty state, row render, name-link nav
 │   ├── sequences.crud.spec.ts   # Create, create-cancel, edit, delete via dialogs
 │   └── sequences.detail.spec.ts # Navigate, back link, edit, delete + redirect
 ├── playwright.config.ts     # Playwright — Chromium, allure reporter, webServer
 ├── vitest.config.ts         # Vitest — jsdom, allure reporter, v8 coverage
-├── vite.config.ts           # Vite — proxy (with HTML bypass), plugin config
+├── vite.config.ts           # Vite — proxy (/sequences bypass; /auth no bypass; /users bypass; /health)
 ├── postcss.config.js        # PostCSS — @tailwindcss/postcss + autoprefixer
 ├── tsconfig.json            # TypeScript project references root
 ├── tsconfig.app.json        # App source tsconfig (strict)
@@ -123,6 +156,9 @@ frontend/
 | `/` | — | Redirects to `/sequences` |
 | `/sequences` | `SequenceListView` | Sortable table of all sequences with CRUD dialogs |
 | `/sequences/:id` | `SequenceDetailView` | Read-only detail view with Edit / Delete actions |
+| `/login` | `LoginView.vue` | "Sign in with Google" — sets `window.location.href` to `/auth/google/login` (top-level navigation, not fetch — required for the cross-origin redirect to Google) |
+| `/auth/callback` | `AuthCallbackView.vue` | Reads `?token=` from URL, calls `setToken()`, navigates to `/` |
+| `/users` | `UsersView.vue` | Lists all users who have logged in (public — no auth required) |
 
 ---
 
@@ -186,6 +222,11 @@ just frontend-e2e-install   # install Chromium once
 just frontend-e2e            # run (requires just dev-up)
 cd frontend && allure serve allure-results-e2e   # view report
 ```
+
+Playwright E2E tests that require an authenticated state do **not** contact Google.
+`injectAuthToken(page)` from `e2e/helpers/api.ts` calls `POST /auth/token` (available
+when `ENABLE_PASSWORD_AUTH=true`) and injects the JWT into localStorage directly,
+simulating a completed OAuth login.
 
 For the full strategy — data patterns, Allure locations, CI job mapping, and how
 to add new tests — see [`docs/testing.md`](./testing.md).

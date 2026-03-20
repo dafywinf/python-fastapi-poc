@@ -9,7 +9,7 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
 import * as allure from 'allure-js-commons'
 import { mount, flushPromises } from '@vue/test-utils'
-import { nextTick } from 'vue'
+import { nextTick, ref, computed } from 'vue'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import SequenceListView from '../views/SequenceListView.vue'
 import { sequencesApi } from '../api/sequences'
@@ -25,6 +25,19 @@ vi.mock('../api/sequences', () => ({
     update: vi.fn(),
     delete: vi.fn(),
   },
+}))
+
+// Mock useAuth so write-action buttons are always visible in unit tests.
+// The auth guard behaviour is covered by E2E tests.
+vi.mock('../composables/useAuth', () => ({
+  useAuth: () => ({
+    isAuthenticated: computed(() => true),
+    user: computed(() => ({ email: 'test@example.com', name: 'Test User' })),
+    token: ref('mock-token'),
+    setToken: vi.fn(),
+    login: vi.fn(),
+    logout: vi.fn(),
+  }),
 }))
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────

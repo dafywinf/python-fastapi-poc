@@ -35,3 +35,15 @@ class SequenceResponse(BaseModel):
     name: str
     description: str | None
     created_at: datetime
+
+
+class UserResponse(BaseModel):
+    """User profile as returned by the API — used for /users/ list and /users/me."""
+
+    id: int
+    email: str
+    name: str
+    picture: str | None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

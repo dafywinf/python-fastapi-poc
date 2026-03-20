@@ -53,11 +53,15 @@ def hash_password(plain_password: str) -> str:
     ).decode()
 
 
-def create_access_token(subject: str) -> str:
-    """Create a signed JWT access token for the given subject (username).
+def create_access_token(
+    subject: str, extra_claims: dict[str, str] | None = None
+) -> str:
+    """Create a signed JWT access token.
 
     Args:
-        subject: The identifier to embed in the token (typically a username).
+        subject: The JWT ``sub`` claim — the authenticated user's email or username.
+        extra_claims: Optional additional claims to include in the payload
+            (e.g. ``name``).
 
     Returns:
         A signed JWT string.
@@ -66,6 +70,8 @@ def create_access_token(subject: str) -> str:
         minutes=settings.access_token_expire_minutes
     )
     payload: dict[str, object] = {"sub": subject, "exp": expire}
+    if extra_claims:
+        payload.update(extra_claims)
     return str(
         jwt.encode(  # pyright: ignore[reportUnknownMemberType]
             payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm

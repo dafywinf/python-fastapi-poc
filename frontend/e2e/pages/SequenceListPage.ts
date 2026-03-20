@@ -44,9 +44,14 @@ export class SequenceListPage {
 
   async rowCount(): Promise<number> {
     await this.waitForLoaded()
-    return this.page
-      .getByRole('row')
-      .filter({ has: this.page.getByTitle('Edit') })
-      .count()
+    // Count data rows by role — works whether or not the user is authenticated
+    // (auth-gated edit/delete buttons are absent for unauthenticated users).
+    const allRows = await this.page.getByRole('row').count()
+    // Subtract 1 for the header row; if only a state cell row is present, return 0.
+    const stateRow = this.page.getByRole('cell', {
+      name: 'No sequences found. Create one to get started.',
+    })
+    if (await stateRow.isVisible()) return 0
+    return Math.max(0, allRows - 1)
   }
 }

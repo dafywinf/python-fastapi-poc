@@ -61,5 +61,19 @@
 - [x] **DataTable:** Sortable sequence table with client-side column sorting.
 - [x] **View Mode:** Read-only detail view for sequences (`/sequences/:id`).
 - [x] **CRUD Dialogs:** Create, edit, and delete via native `<dialog>` modals in list and detail views.
-- [ ] **Login Flow:** User authentication UI and JWT persistence in `localStorage`.
-- [ ] **Edit Mode:** Conditional rendering of forms/dialogs based on user ownership/scopes.
+- [x] **Login Flow:** User authentication UI and JWT persistence in `localStorage`.
+- [x] **Edit Mode:** Conditional rendering of forms/dialogs based on auth state.
+
+---
+
+## Phase 5: Social Login & User Management ✅
+
+- [x] Google OAuth2 backend (`google_oauth.py` + `user_routes.py`)
+- [x] User model + Alembic migration
+- [x] `pytest-env` dev dependency + `pyproject.toml` env config
+- [x] `admin_username` / `admin_password_hash` / `google_client_id` / `google_client_secret` optional in `config.py`
+- [x] Frontend login flow (`LoginView`, `AuthCallbackView`, `useAuth` composable)
+- [x] Users page (`UsersView` + `api/users.ts`)
+- [x] Navbar auth state (Sign in / Logout / user email)
+- [x] Sequences page conditional edit UI (Create, Edit, Delete gated on `isAuthenticated`)
+- [x] Tests: backend unit tests, Vitest component tests, Playwright E2E auth flow and users page
