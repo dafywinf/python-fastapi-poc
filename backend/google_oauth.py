@@ -4,20 +4,24 @@ Single-responsibility module for all Google OAuth2 logic. All outbound HTTP
 calls use ``httpx`` in sync mode to match the project's sync handler
 architecture.
 
-State management uses an in-memory dict keyed by the random state token and
-valued by the ``time.monotonic()`` timestamp at generation. This is safe for
-a single-worker deployment only — see the design doc for the POC constraint.
+State management uses Redis (via :mod:`backend.redis_client`) with SETEX for
+atomic write-with-TTL and GETDEL for atomic read-and-delete. This prevents
+replay attacks and is safe under multi-worker deployments.
 """
 
+import logging
 import secrets
-import time
 from dataclasses import dataclass
 from urllib.parse import urlencode
 
 import httpx
+import redis as redis_lib
 from fastapi import HTTPException
 
 from backend.config import settings
+from backend.redis_client import get_redis
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -27,11 +31,7 @@ _GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 _GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 _GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
 
-STATE_TTL_SECONDS: float = 600.0  # 10 minutes
-
-# In-memory CSRF state store: {state_token: created_at_monotonic}
-# Single-worker POC only — not safe under multi-worker deployments.
-state_store: dict[str, float] = {}
+STATE_TTL_SECONDS: int = 600  # 10 minutes — must not exceed this value
 
 
 # ---------------------------------------------------------------------------
@@ -55,32 +55,66 @@ class GoogleUserInfo:
 
 
 def generate_state() -> str:
-    """Generate a cryptographically random CSRF state token and store it.
+    """Generate a cryptographically random CSRF state token and store it in Redis.
+
+    The token is stored with a TTL of :data:`STATE_TTL_SECONDS`. Tokens are
+    consumed atomically by :func:`validate_and_consume_state` — replay is
+    impossible even under concurrent load.
 
     Returns:
         A URL-safe random string used as the OAuth2 ``state`` parameter.
+
+    Raises:
+        HTTPException: 503 if Redis is unavailable.
     """
     state = secrets.token_urlsafe(32)
-    state_store[state] = time.monotonic()
+    key = f"oauth:state:{state}"
+    try:
+        get_redis().setex(key, STATE_TTL_SECONDS, "1")
+    except redis_lib.RedisError as err:
+        logger.error(
+            "Redis unavailable — cannot store OAuth state. key=%s url=%s err=%s",
+            key,
+            settings.redis_url,
+            err,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication service temporarily unavailable. Please try again.",
+        ) from err
     return state
 
 
 def validate_and_consume_state(state: str) -> None:
-    """Validate a received state token and remove it from the store.
+    """Validate and atomically consume a CSRF state token from Redis.
+
+    Uses GETDEL — a single atomic Redis command that reads the key and
+    deletes it in one operation. This prevents replay: if two concurrent
+    requests arrive with the same token, only one will get a non-None result.
 
     Args:
         state: The ``state`` query parameter received in the OAuth2 callback.
 
     Raises:
-        HTTPException: 400 if the state is unknown or has expired.
+        HTTPException: 400 if the state is unknown, expired, or already consumed.
+        HTTPException: 503 if Redis is unavailable.
     """
-    created_at = state_store.get(state)
-    if created_at is None:
-        raise HTTPException(status_code=400, detail="Invalid OAuth state")
-    # Remove regardless — expired states must not be reused
-    del state_store[state]
-    if time.monotonic() - created_at > STATE_TTL_SECONDS:
-        raise HTTPException(status_code=400, detail="OAuth state has expired")
+    key = f"oauth:state:{state}"
+    try:
+        value = get_redis().getdel(key)
+    except redis_lib.RedisError as err:
+        logger.error(
+            "Redis unavailable — cannot consume OAuth state. key=%s url=%s err=%s",
+            key,
+            settings.redis_url,
+            err,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication service temporarily unavailable. Please try again.",
+        ) from err
+    if value is None:
+        raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
 
 
 # ---------------------------------------------------------------------------
@@ -136,7 +170,17 @@ def exchange_code_for_tokens(code: str) -> dict[str, str]:
             },
         )
         response.raise_for_status()
-    except (httpx.HTTPStatusError, httpx.RequestError) as err:
+    except httpx.HTTPStatusError as err:
+        logger.error(
+            "Google token endpoint returned %s: %s",
+            err.response.status_code,
+            err.response.text,
+        )
+        raise HTTPException(
+            status_code=502, detail="Failed to exchange code with Google"
+        ) from err
+    except httpx.RequestError as err:
+        logger.error("Network error contacting Google token endpoint: %s", err)
         raise HTTPException(
             status_code=502, detail="Failed to exchange code with Google"
         ) from err
@@ -161,11 +205,31 @@ def fetch_google_user_info(access_token: str) -> GoogleUserInfo:
             headers={"Authorization": f"Bearer {access_token}"},
         )
         response.raise_for_status()
-    except (httpx.HTTPStatusError, httpx.RequestError) as err:
+    except httpx.HTTPStatusError as err:
+        logger.error(
+            "Google userinfo endpoint returned %s: %s",
+            err.response.status_code,
+            err.response.text,
+        )
+        raise HTTPException(
+            status_code=502, detail="Failed to fetch user info from Google"
+        ) from err
+    except httpx.RequestError as err:
+        logger.error("Network error contacting Google userinfo endpoint: %s", err)
         raise HTTPException(
             status_code=502, detail="Failed to fetch user info from Google"
         ) from err
     data: dict[str, object] = response.json()
+    missing = [f for f in ("sub", "email", "name") if f not in data]
+    if missing:
+        logger.error(
+            "Google userinfo response missing required fields: %s. data=%s",
+            missing,
+            {k: v for k, v in data.items() if k != "access_token"},
+        )
+        raise HTTPException(
+            status_code=502, detail="Failed to fetch user info from Google"
+        )
     return GoogleUserInfo(
         google_id=str(data["sub"]),
         email=str(data["email"]),

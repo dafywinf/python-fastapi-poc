@@ -1,15 +1,18 @@
 """Tests for user persistence and the /users endpoints."""
 
+import secrets
+import time
 from unittest.mock import MagicMock, patch
 
 import allure
+import fakeredis
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.google_oauth import GoogleUserInfo
+from backend.google_oauth import GoogleUserInfo, generate_state
 from backend.models import User
 
 
@@ -54,7 +57,9 @@ class TestUserModel:
 @allure.feature("Users")  # pyright: ignore[reportUnknownMemberType]
 @allure.story("Google Login Redirect")  # pyright: ignore[reportUnknownMemberType]
 class TestGoogleLogin:
-    def test_login_redirects_to_google(self, client: TestClient) -> None:
+    def test_login_redirects_to_google(
+        self, fake_redis: fakeredis.FakeRedis, client: TestClient
+    ) -> None:
         response = client.get("/auth/google/login", follow_redirects=False)
         assert response.status_code == 307
         location = response.headers["location"]
@@ -62,7 +67,9 @@ class TestGoogleLogin:
         assert "state=" in location
         assert "response_type=code" in location
 
-    def test_login_includes_required_scopes(self, client: TestClient) -> None:
+    def test_login_includes_required_scopes(
+        self, fake_redis: fakeredis.FakeRedis, client: TestClient
+    ) -> None:
         response = client.get("/auth/google/login", follow_redirects=False)
         location = response.headers["location"]
         assert "email" in location
@@ -72,12 +79,6 @@ class TestGoogleLogin:
 @allure.feature("Users")  # pyright: ignore[reportUnknownMemberType]
 @allure.story("Google OAuth Callback")  # pyright: ignore[reportUnknownMemberType]
 class TestGoogleCallback:
-    def setup_method(self) -> None:
-        """Clear the OAuth state store before each test to avoid cross-test leakage."""
-        from backend.google_oauth import state_store
-
-        state_store.clear()
-
     def _make_mock_google(
         self,
         google_id: str = "gid-1",
@@ -94,10 +95,11 @@ class TestGoogleCallback:
         return mock
 
     def test_callback_creates_user_and_redirects_with_jwt(
-        self, client: TestClient, db_session: Session
+        self,
+        fake_redis: fakeredis.FakeRedis,
+        client: TestClient,
+        db_session: Session,
     ) -> None:
-        from backend.google_oauth import generate_state
-
         state = generate_state()
         mock = self._make_mock_google()
 
@@ -113,7 +115,7 @@ class TestGoogleCallback:
         assert response.status_code in (302, 307)
         location = response.headers["location"]
         assert "auth/callback" in location
-        assert "token=" in location
+        assert "#token=" in location
 
         # Verify user was persisted in DB
         user = db_session.execute(
@@ -124,10 +126,11 @@ class TestGoogleCallback:
         assert user.name == "Alice"
 
     def test_callback_updates_existing_user_profile(
-        self, client: TestClient, db_session: Session
+        self,
+        fake_redis: fakeredis.FakeRedis,
+        client: TestClient,
+        db_session: Session,
     ) -> None:
-        from backend.google_oauth import generate_state
-
         # Pre-seed an existing user
         db_session.add(
             User(
@@ -164,21 +167,65 @@ class TestGoogleCallback:
         assert user.name == "New Name"
         assert user.picture == "https://img.example.com/bob.jpg"
 
-    def test_callback_rejects_invalid_state(self, client: TestClient) -> None:
+    def test_callback_rejects_invalid_state(
+        self, fake_redis: fakeredis.FakeRedis, client: TestClient
+    ) -> None:
         response = client.get(
             "/auth/google/callback?code=some-code&state=invalid-state",
             follow_redirects=False,
         )
         assert response.status_code == 400
 
-    def test_callback_rejects_expired_state(self, client: TestClient) -> None:
-        from backend.google_oauth import STATE_TTL_SECONDS, generate_state, state_store
-
-        state = generate_state()
-        state_store[state] = state_store[state] - STATE_TTL_SECONDS - 1
+    def test_callback_rejects_expired_state(
+        self, fake_redis: fakeredis.FakeRedis, client: TestClient
+    ) -> None:
+        state = secrets.token_urlsafe(32)
+        # Write directly with TTL=1, wait for expiry
+        fake_redis.setex(f"oauth:state:{state}", 1, "1")
+        time.sleep(2)
 
         response = client.get(
             f"/auth/google/callback?code=code&state={state}",
+            follow_redirects=False,
+        )
+        assert response.status_code == 400
+
+    def test_callback_rejects_replayed_state(
+        self,
+        fake_redis: fakeredis.FakeRedis,
+        client: TestClient,
+    ) -> None:
+        """A state token consumed by a successful callback cannot be replayed."""
+        state = generate_state()
+        mock = self._make_mock_google()
+
+        with (
+            patch("backend.user_routes.exchange_code_for_tokens", mock.exchange),
+            patch("backend.user_routes.fetch_google_user_info", mock.userinfo),
+        ):
+            first = client.get(
+                f"/auth/google/callback?code=code&state={state}",
+                follow_redirects=False,
+            )
+            second = client.get(
+                f"/auth/google/callback?code=code&state={state}",
+                follow_redirects=False,
+            )
+
+        assert first.status_code in (302, 307)
+        assert second.status_code == 400
+
+    def test_callback_returns_400_when_user_denies_consent(
+        self, fake_redis: fakeredis.FakeRedis, client: TestClient
+    ) -> None:
+        """Google redirects with ?error=access_denied when the user cancels.
+
+        The endpoint must not return a raw FastAPI 422 (missing 'code' param)
+        but instead a graceful 400.
+        """
+        state = generate_state()
+        response = client.get(
+            f"/auth/google/callback?error=access_denied&state={state}",
             follow_redirects=False,
         )
         assert response.status_code == 400
@@ -187,13 +234,15 @@ class TestGoogleCallback:
 @allure.feature("Users")  # pyright: ignore[reportUnknownMemberType]
 @allure.story("Users List")  # pyright: ignore[reportUnknownMemberType]
 class TestUsersList:
-    def test_list_users_returns_empty_list_by_default(self, client: TestClient) -> None:
-        response = client.get("/users/")
+    def test_list_users_returns_empty_list_by_default(
+        self, client: TestClient, auth_headers: dict[str, str]
+    ) -> None:
+        response = client.get("/users/", headers=auth_headers)
         assert response.status_code == 200
         assert response.json() == []
 
     def test_list_users_returns_seeded_users(
-        self, client: TestClient, db_session: Session
+        self, client: TestClient, db_session: Session, auth_headers: dict[str, str]
     ) -> None:
         db_session.add(
             User(google_id="g1", email="a@test.com", name="Alice", picture=None)
@@ -203,16 +252,15 @@ class TestUsersList:
         )
         db_session.flush()
 
-        response = client.get("/users/")
+        response = client.get("/users/", headers=auth_headers)
         assert response.status_code == 200
         emails = [u["email"] for u in response.json()]
         assert "a@test.com" in emails
         assert "b@test.com" in emails
 
-    def test_list_users_is_public(self, client: TestClient) -> None:
-        """No auth required for the users list."""
+    def test_list_users_requires_authentication(self, client: TestClient) -> None:
         response = client.get("/users/")
-        assert response.status_code == 200
+        assert response.status_code == 401
 
 
 @allure.feature("Users")  # pyright: ignore[reportUnknownMemberType]

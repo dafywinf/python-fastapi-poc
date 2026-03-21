@@ -4,21 +4,27 @@ These tests do not touch the database — they test pure functions and mock
 all outbound HTTP calls.
 """
 
+import base64
+import json
+import secrets
+import threading
 import time
 from unittest.mock import MagicMock, patch
 
 import allure
+import fakeredis
 import httpx
 import pytest
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 
 from backend.google_oauth import (
     STATE_TTL_SECONDS,
+    GoogleUserInfo,
     build_google_redirect_url,
     exchange_code_for_tokens,
     fetch_google_user_info,
     generate_state,
-    state_store,
     validate_and_consume_state,
 )
 
@@ -26,41 +32,77 @@ from backend.google_oauth import (
 @allure.feature("Google OAuth2")  # pyright: ignore[reportUnknownMemberType]
 @allure.story("State Management")  # pyright: ignore[reportUnknownMemberType]
 class TestStateManagement:
-    def setup_method(self) -> None:
-        """Clear the state store before each test."""
-        state_store.clear()
-
-    def test_generate_state_returns_unique_tokens(self) -> None:
+    def test_generate_state_returns_unique_tokens(
+        self, fake_redis: fakeredis.FakeRedis
+    ) -> None:
         s1 = generate_state()
         s2 = generate_state()
         assert s1 != s2
         assert len(s1) > 16
 
-    def test_generate_state_stores_timestamp(self) -> None:
-        before = time.monotonic()
+    def test_generate_state_stores_key_in_redis(
+        self, fake_redis: fakeredis.FakeRedis
+    ) -> None:
         state = generate_state()
-        after = time.monotonic()
-        assert state in state_store
-        assert before <= state_store[state] <= after
+        assert fake_redis.exists(f"oauth:state:{state}") == 1
 
-    def test_validate_and_consume_state_removes_state(self) -> None:
+    def test_generate_state_key_has_ttl(self, fake_redis: fakeredis.FakeRedis) -> None:
+        state = generate_state()
+        ttl = int(fake_redis.ttl(f"oauth:state:{state}"))  # type: ignore[arg-type]
+        # TTL should be close to STATE_TTL_SECONDS (allow 5s drift for slow CI)
+        assert STATE_TTL_SECONDS - 5 <= ttl <= STATE_TTL_SECONDS
+
+    def test_validate_and_consume_removes_key(
+        self, fake_redis: fakeredis.FakeRedis
+    ) -> None:
         state = generate_state()
         validate_and_consume_state(state)
-        assert state not in state_store
+        assert fake_redis.exists(f"oauth:state:{state}") == 0
 
-    def test_validate_and_consume_state_raises_on_unknown(self) -> None:
+    def test_validate_rejects_unknown_state(
+        self, fake_redis: fakeredis.FakeRedis
+    ) -> None:
         with pytest.raises(HTTPException) as exc_info:
             validate_and_consume_state("not-a-real-state")
         assert exc_info.value.status_code == 400
 
-    def test_validate_and_consume_state_raises_on_expired(self) -> None:
-        state = generate_state()
-        # Manually set the timestamp to be older than the TTL
-        state_store[state] = time.monotonic() - STATE_TTL_SECONDS - 1
+    def test_validate_rejects_expired_state(
+        self, fake_redis: fakeredis.FakeRedis
+    ) -> None:
+        state = secrets.token_urlsafe(32)
+        # Write directly with TTL=1, wait for expiry
+        fake_redis.setex(f"oauth:state:{state}", 1, "1")
+        time.sleep(2)
         with pytest.raises(HTTPException) as exc_info:
             validate_and_consume_state(state)
         assert exc_info.value.status_code == 400
-        assert state not in state_store
+
+    def test_concurrent_consumption_only_one_succeeds(
+        self, fake_redis: fakeredis.FakeRedis
+    ) -> None:
+        """GETDEL is atomic — only one thread can consume a state token."""
+        state = generate_state()
+        results: list[bool] = []
+        lock = threading.Lock()
+
+        def try_consume() -> None:
+            try:
+                validate_and_consume_state(state)
+                with lock:
+                    results.append(True)
+            except HTTPException:
+                with lock:
+                    results.append(False)
+
+        t1 = threading.Thread(target=try_consume)
+        t2 = threading.Thread(target=try_consume)
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        assert results.count(True) == 1
+        assert results.count(False) == 1
 
 
 @allure.feature("Google OAuth2")  # pyright: ignore[reportUnknownMemberType]
@@ -144,3 +186,73 @@ class TestFetchGoogleUserInfo:
             with pytest.raises(HTTPException) as exc_info:
                 fetch_google_user_info("any-token")
         assert exc_info.value.status_code == 502
+
+
+@allure.feature("Google OAuth2")  # pyright: ignore[reportUnknownMemberType]
+@allure.story("Callback")  # pyright: ignore[reportUnknownMemberType]
+class TestGoogleCallbackRedirect:
+    _USER_INFO = GoogleUserInfo(
+        google_id="google-123",
+        email="user@example.com",
+        name="Test User",
+        picture=None,
+    )
+
+    def test_callback_redirects_with_fragment_not_query(
+        self, fake_redis: fakeredis.FakeRedis, client: TestClient
+    ) -> None:
+        """JWT must be in the URL fragment (#token=) not the query string (?token=)."""
+        state = generate_state()
+
+        with (
+            patch(
+                "backend.user_routes.exchange_code_for_tokens",
+                return_value={"access_token": "google-access-token"},
+            ),
+            patch(
+                "backend.user_routes.fetch_google_user_info",
+                return_value=self._USER_INFO,
+            ),
+        ):
+            response = client.get(
+                f"/auth/google/callback?code=auth-code&state={state}",
+                follow_redirects=False,
+            )
+
+        assert response.status_code in (302, 307)
+        location = response.headers["location"]
+        assert "#token=" in location, f"Expected fragment token, got: {location}"
+        assert (
+            "?token=" not in location
+        ), f"Token must not be in query string: {location}"
+
+    def test_callback_fragment_contains_valid_jwt_with_correct_claims(
+        self, fake_redis: fakeredis.FakeRedis, client: TestClient
+    ) -> None:
+        """The JWT in the fragment must encode the user's email and name."""
+        state = generate_state()
+
+        with (
+            patch(
+                "backend.user_routes.exchange_code_for_tokens",
+                return_value={"access_token": "google-access-token"},
+            ),
+            patch(
+                "backend.user_routes.fetch_google_user_info",
+                return_value=self._USER_INFO,
+            ),
+        ):
+            response = client.get(
+                f"/auth/google/callback?code=auth-code&state={state}",
+                follow_redirects=False,
+            )
+
+        location = response.headers["location"]
+        fragment = location.split("#", 1)[1]
+        token = fragment.split("token=", 1)[1]
+
+        # Decode the JWT payload (middle segment) without verifying the signature
+        padding = "=" * (-len(token.split(".")[1]) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(token.split(".")[1] + padding))
+        assert payload["sub"] == "user@example.com"
+        assert payload["name"] == "Test User"

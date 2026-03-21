@@ -92,4 +92,12 @@ describe('useAuth', () => {
     setToken(VALID_TOKEN)
     expect(localStorageMock.getItem('access_token')).toBe(VALID_TOKEN)
   })
+
+  it('isAuthenticated is false and user is null when localStorage holds a malformed JWT', async () => {
+    localStorageMock.setItem('access_token', 'not.a.jwt')
+    const { useAuth } = await import('../composables/useAuth')
+    const { isAuthenticated, user } = useAuth()
+    expect(isAuthenticated.value).toBe(false)
+    expect(user.value).toBeNull()
+  })
 })

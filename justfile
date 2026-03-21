@@ -134,8 +134,8 @@ report: clean-reports ci
 
 # ── Platform ─────────────────────────────────────────────────────────────────
 
-# Start all platform services (PostgreSQL + full monitoring stack)
-platform-up: db-up obs-up
+# Start all platform services (PostgreSQL + Redis + full monitoring stack)
+platform-up: db-up redis-up obs-up
 
 # Stop all platform services
 platform-down:
@@ -144,6 +144,10 @@ platform-down:
 # Start the PostgreSQL container only
 db-up:
     docker compose up -d db
+
+# Start the Redis container
+redis-up:
+    docker compose up -d redis
 
 # Stop and remove all containers
 db-down:

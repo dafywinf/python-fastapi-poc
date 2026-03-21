@@ -21,6 +21,7 @@ python-json-logger = "^3.2"
 python-jose = {extras = ["cryptography"], version = "^3.5.0"}
 bcrypt = "^5.0.0"
 python-multipart = "^0.0.22"
+redis = ">=5.0,<6.0"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.8.0"
@@ -32,6 +33,7 @@ testcontainers = {extras = ["postgres"], version = "^4.14.1"}
 basedpyright = "^1.38.2"
 playwright = "^1.58.0"
 pytest-env = "^1.2.0"
+fakeredis = ">=2.20,<3.0"
 
 [tool.ruff]
 line-length = 88
