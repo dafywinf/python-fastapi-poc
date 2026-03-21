@@ -33,13 +33,12 @@ export class SequenceListPage {
     return this.row(name).getByTitle('Delete')
   }
 
-  /** Wait for the loading spinner to clear before making assertions. */
+  /** Wait for the sequences API response to arrive and the table to settle. */
   async waitForLoaded(): Promise<void> {
-    await this.page.waitForFunction(() =>
-      !Array.from(document.querySelectorAll('td')).some(
-        (td) => td.textContent?.trim() === 'Loading\u2026',
-      ),
-    )
+    // networkidle fires once there are no in-flight requests for 500 ms —
+    // at that point Vue has processed the /sequences response and rendered
+    // either the empty-state row or the data rows.
+    await this.page.waitForLoadState('networkidle')
   }
 
   async rowCount(): Promise<number> {
