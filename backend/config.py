@@ -23,6 +23,9 @@ class Settings(BaseSettings):
         backend_url: Base URL of this API (used for OAuth callback registration).
         enable_password_auth: When True, the password-based /auth/token endpoint
             is registered. Defaults to False; set to True in tests via pytest-env.
+        redis_url: Connection URL for the Redis instance used for OAuth2 state tokens.
+            Defaults to localhost:6379 — matches the docker-compose redis service.
+            For CI, fakeredis bypasses this URL entirely; no env var is needed.
     """
 
     database_url: str
@@ -37,6 +40,7 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:5173"
     backend_url: str = "http://localhost:8000"
     enable_password_auth: bool = False
+    redis_url: str = "redis://localhost:6379/0"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

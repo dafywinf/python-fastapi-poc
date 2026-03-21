@@ -1,15 +1,20 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
 
-const route = useRoute()
 const router = useRouter()
 const { setToken } = useAuth()
 
 onMounted(() => {
-  const token = route.query.token
-  if (typeof token === 'string' && token.length > 0) {
+  const hash = window.location.hash.slice(1) // remove leading '#'
+  const params = new URLSearchParams(hash)
+  const token = params.get('token')
+  // Clear the fragment from the current history entry immediately.
+  // This prevents the token from persisting in browser history and removes
+  // it from the address bar before router.push() adds a new history entry.
+  window.history.replaceState(null, '', window.location.pathname)
+  if (token) {
     setToken(token)
   }
   void router.push('/')

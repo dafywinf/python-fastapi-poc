@@ -10,6 +10,7 @@ import os
 import pathlib
 from collections.abc import Generator
 
+import fakeredis
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, create_engine
@@ -18,6 +19,7 @@ from testcontainers.postgres import PostgresContainer
 
 from alembic import command
 from alembic.config import Config
+from backend import redis_client
 from backend.config import settings
 from backend.database import get_session
 from backend.main import app
@@ -46,7 +48,7 @@ def engine(postgres_container: PostgresContainer) -> Generator[Engine, None, Non
     """Create a SQLAlchemy engine and apply Alembic migrations once."""
     database_url: str = postgres_container.get_connection_url()  # pyright: ignore[reportUnknownMemberType]
 
-    # testcontainers returns a psycopg2+asyncpg URL — normalise to psycopg2
+    # testcontainers returns a postgresql+psycopg2 URL — normalise to postgresql
     database_url = database_url.replace("postgresql+psycopg2://", "postgresql://")
 
     _engine = create_engine(database_url, pool_pre_ping=True)
@@ -133,3 +135,24 @@ def auth_headers(auth_token: str) -> dict[str, str]:
         A dict suitable for use as request headers.
     """
     return {"Authorization": f"Bearer {auth_token}"}
+
+
+@pytest.fixture(scope="function")  # must be function-scoped — FakeServer is stateful
+def fake_redis() -> Generator[fakeredis.FakeRedis, None, None]:
+    """Provide an isolated in-process Redis for each test.
+
+    A fresh FakeServer is created per test invocation. Sharing a FakeServer
+    across tests would cause state bleed between OAuth state tokens.
+    Never promote this fixture to session scope.
+
+    Yields:
+        A :class:`fakeredis.FakeRedis` instance wired into the app's
+        :func:`backend.redis_client.get_redis` singleton.
+    """
+    server = fakeredis.FakeServer()
+    client: fakeredis.FakeRedis = fakeredis.FakeRedis(
+        server=server, decode_responses=True
+    )
+    redis_client._client = client  # type: ignore[assignment,reportPrivateUsage]
+    yield client
+    redis_client._client = None  # type: ignore[reportPrivateUsage]

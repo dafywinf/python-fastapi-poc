@@ -59,7 +59,7 @@ def create_access_token(
     """Create a signed JWT access token.
 
     Args:
-        subject: The JWT ``sub`` claim — the authenticated user's email or username.
+        subject: The JWT ``sub`` claim — the authenticated user's email.
         extra_claims: Optional additional claims to include in the payload
             (e.g. ``name``).
 
@@ -86,7 +86,7 @@ def _decode_token_subject(token: str) -> str:
         token: A raw JWT string from the Authorization header.
 
     Returns:
-        The username embedded in the token's ``sub`` claim.
+        The email embedded in the token's ``sub`` claim.
 
     Raises:
         HTTPException: 401 if the token is missing, expired, or otherwise invalid.
@@ -107,13 +107,14 @@ def _decode_token_subject(token: str) -> str:
             raise credentials_error
         return subject
     except JWTError as err:
+        logger.debug("JWT validation failed: %s", err)
         raise credentials_error from err
 
 
 def get_optional_user(
     token: Annotated[str | None, Depends(oauth2_scheme)],
 ) -> str | None:
-    """Return the authenticated username, or None when no token is provided.
+    """Return the authenticated user's email, or None when no token is provided.
 
     A token that IS provided but fails validation raises 401 immediately, so
     callers can distinguish "no auth" from "bad auth".
@@ -122,7 +123,8 @@ def get_optional_user(
         token: Raw Bearer token from the Authorization header, or None.
 
     Returns:
-        The username embedded in the token, or None if no token was sent.
+        The email embedded in the token's ``sub`` claim, or None if no token
+        was sent.
 
     Raises:
         HTTPException: 401 if a token was sent but is invalid or expired.
@@ -141,10 +143,10 @@ def require_authenticated_user(
     """Require a valid JWT; raise 401 if no token is present or it is invalid.
 
     Args:
-        user: Result of get_optional_user — username or None.
+        user: Result of get_optional_user — email or None.
 
     Returns:
-        The authenticated username.
+        The authenticated user's email.
 
     Raises:
         HTTPException: 401 if the caller is not authenticated.
