@@ -246,8 +246,8 @@ jobs:
           HASH=$(poetry run python3 -c "import bcrypt; print(bcrypt.hashpw(b'admin', bcrypt.gensalt(rounds=4)).decode())")
           echo "ADMIN_PASSWORD_HASH=${HASH}" >> $GITHUB_ENV
 
-      - name: Start database
-        run: docker compose up -d db --wait
+      - name: Start database and Redis
+        run: docker compose up -d db redis --wait
 
       - name: Run migrations
         env:
@@ -257,6 +257,7 @@ jobs:
       - name: Start FastAPI app
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/sequences_db
+          ENABLE_PASSWORD_AUTH: 'true'
         run: |
           nohup poetry run uvicorn backend.main:app --host 0.0.0.0 --port 8000 \
             > /tmp/uvicorn.log 2>&1 &
