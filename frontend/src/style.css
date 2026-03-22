@@ -1,6 +1,4 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 *,
 *::before,
@@ -16,4 +14,12 @@ body {
   color: #1e293b;
   background: #f8fafc;
   -webkit-font-smoothing: antialiased;
+}
+
+@layer base {
+  body {
+    background-color: #f8fafc; /* bg-slate-50 */
+    color: #0f172a; /* text-slate-900 */
+    font-family: ui-sans-serif, system-ui, sans-serif; /* font-sans */
+  }
 }

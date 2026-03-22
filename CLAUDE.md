@@ -35,17 +35,6 @@
 - **Updates:** After completing a significant sub-task, update the relevant checkbox in `TASK_PLAN.md`.
 - **Context:** Before starting a new phase, run `ls -R` to verify the filesystem matches the expected state in the plan.
 
-## Database Schema
-
-Table: `sequences`
-
-| Column        | Type     | Notes                  |
-| ------------- | -------- | ---------------------- |
-| `id`          | Integer  | Primary key            |
-| `name`        | String   | Required               |
-| `description` | String   | Nullable               |
-| `created_at`  | DateTime | Server default `now()` |
-
 ## Project Structure
 
 ```
@@ -57,8 +46,6 @@ Table: `sequences`
 │   ├── models.py       # SQLAlchemy models (source of truth)
 │   ├── schemas.py      # Pydantic V2 DTOs
 │   ├── database.py     # Engine & session factory
-│   ├── routes.py       # API route handlers (sync def)
-│   ├── services.py     # Business logic
 │   └── exceptions.py   # Exception handling decorator
 ├── monitoring/
 │   ├── prometheus/

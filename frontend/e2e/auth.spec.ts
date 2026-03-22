@@ -20,37 +20,35 @@ test.describe('Auth UI', () => {
 
   test('unauthenticated user sees Sign in button in navbar', async ({ page }) => {
     await allure.story('Unauthenticated state')
-    await page.goto(`${FRONTEND_URL}/sequences`)
+    await page.goto(`${FRONTEND_URL}/routines`)
     await expect(page.getByText('Sign in with Google')).toBeVisible()
   })
 
   test('authenticated user sees their email in navbar', async ({ page }) => {
     await allure.story('Authenticated state')
     await injectAuthToken(page)
-    await page.goto(`${FRONTEND_URL}/sequences`)
-    await expect(page.locator('.navbar__user-email')).toContainText('admin')
+    await page.goto(`${FRONTEND_URL}/routines`)
+    await expect(page.getByTestId('user-email')).toContainText('admin')
     await expect(page.getByText('Logout')).toBeVisible()
   })
 
-  test('authenticated user sees Create button on sequences page', async ({ page }) => {
+  test('authenticated user sees New Routine button on routines page', async ({ page }) => {
     await allure.story('Authenticated state')
     await injectAuthToken(page)
-    await page.goto(`${FRONTEND_URL}/sequences`)
-    // The Create button is labelled "New Sequence" in the UI
-    await expect(page.getByRole('button', { name: /new sequence/i })).toBeVisible()
+    await page.goto(`${FRONTEND_URL}/routines`)
+    await expect(page.getByRole('button', { name: /new routine/i })).toBeVisible()
   })
 
-  test('unauthenticated user does not see Create button', async ({ page }) => {
+  test('unauthenticated user does not see New Routine button', async ({ page }) => {
     await allure.story('Unauthenticated state')
-    await page.goto(`${FRONTEND_URL}/sequences`)
-    // The Create button is labelled "New Sequence" in the UI
-    await expect(page.getByRole('button', { name: /new sequence/i })).not.toBeVisible()
+    await page.goto(`${FRONTEND_URL}/routines`)
+    await expect(page.getByRole('button', { name: /new routine/i })).not.toBeVisible()
   })
 
   test('logout button clears auth state', async ({ page }) => {
     await allure.story('Logout')
     await injectAuthToken(page)
-    await page.goto(`${FRONTEND_URL}/sequences`)
+    await page.goto(`${FRONTEND_URL}/routines`)
     await page.getByText('Logout').click()
     await expect(page.getByText('Sign in with Google')).toBeVisible()
   })
@@ -70,7 +68,7 @@ test.describe('Users page', () => {
 
   test('users page shows the Users nav link', async ({ page }) => {
     await allure.story('Navigation')
-    await page.goto(`${FRONTEND_URL}/sequences`)
+    await page.goto(`${FRONTEND_URL}/routines`)
     await expect(page.getByRole('link', { name: 'Users' })).toBeVisible()
   })
 })

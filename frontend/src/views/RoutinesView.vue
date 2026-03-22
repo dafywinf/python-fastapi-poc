@@ -1,173 +1,114 @@
 <template>
-  <div class="list-view">
+  <div class="flex flex-col gap-5">
+    <!-- ── Header ─────────────────────────────────────────────────────────── -->
+    <div class="flex items-center justify-between">
+      <h1 class="text-2xl font-semibold text-slate-900 m-0">Routines</h1>
+      <Button v-if="isAuthenticated" label="+ New Routine" @click="openCreate" />
+    </div>
+
+    <div v-if="routinesError" class="px-4 py-2.5 rounded-md text-sm bg-red-50 text-red-600 border border-red-200">
+      {{ routinesError }}
+    </div>
+
     <!-- ── Panel 1: Configured Routines ───────────────────────────────────── -->
-    <div class="list-view__header">
-      <h1 class="list-view__title">Routines</h1>
-      <button v-if="isAuthenticated" class="btn btn--primary" @click="openCreate">+ New Routine</button>
+    <div class="border border-slate-200 rounded-lg overflow-hidden">
+      <DataTable :value="routines" :loading="loadingRoutines">
+        <Column field="name" header="Name">
+          <template #body="{ data }">
+            <RouterLink :to="`/routines/${data.id}`" class="text-indigo-700 font-medium no-underline hover:underline">
+              {{ data.name }}
+            </RouterLink>
+          </template>
+        </Column>
+        <Column field="schedule_type" header="Schedule">
+          <template #body="{ data }">
+            <Tag
+              :value="data.schedule_type"
+              :severity="data.schedule_type === 'cron' ? 'primary' : data.schedule_type === 'interval' ? 'info' : 'secondary'"
+            />
+          </template>
+        </Column>
+        <Column field="is_active" header="Active">
+          <template #body="{ data }">
+            <span :class="data.is_active ? 'text-green-600 font-semibold' : 'text-slate-400'">
+              {{ data.is_active ? '✓' : '—' }}
+            </span>
+          </template>
+        </Column>
+        <Column header="Actions">
+          <template #body="{ data }">
+            <div v-if="isAuthenticated" class="flex gap-1.5 justify-end">
+              <Button label="Edit" size="small" severity="secondary" @click="openEdit(data)" />
+              <Button label="Delete" size="small" severity="danger" @click="openDelete(data)" />
+              <Button label="▶ Run" size="small" :disabled="!!runNowLoading[data.id]" @click="runNow(data)" />
+            </div>
+          </template>
+        </Column>
+      </DataTable>
     </div>
 
-    <div v-if="routinesError" class="alert alert--error">{{ routinesError }}</div>
-
-    <div class="table-wrapper">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Schedule</th>
-            <th>Active</th>
-            <th class="col-actions">Actions</th>
-          </tr>
-        </thead>
-        <tbody v-if="loadingRoutines">
-          <tr>
-            <td colspan="4" class="state-cell">
-              <span class="spinner" aria-label="Loading" />
-            </td>
-          </tr>
-        </tbody>
-        <tbody v-else-if="routines.length === 0">
-          <tr>
-            <td colspan="4" class="state-cell">No routines configured. Create one to get started.</td>
-          </tr>
-        </tbody>
-        <tbody v-else>
-          <tr v-for="routine in routines" :key="routine.id" class="data-row">
-            <td>
-              <RouterLink :to="`/routines/${routine.id}`" class="row-link">{{ routine.name }}</RouterLink>
-            </td>
-            <td>
-              <span class="badge" :class="scheduleBadgeClass(routine.schedule_type)">
-                {{ routine.schedule_type }}
-              </span>
-            </td>
-            <td>
-              <span v-if="routine.is_active" class="checkmark" aria-label="Active">✓</span>
-              <span v-else class="text-muted">—</span>
-            </td>
-            <td class="col-actions">
-              <div class="action-cell">
-                <button
-                  v-if="isAuthenticated"
-                  class="btn-icon"
-                  title="Edit"
-                  @click="openEdit(routine)"
-                >
-                  ✏️
-                </button>
-                <button
-                  v-if="isAuthenticated"
-                  class="btn-icon btn-icon--danger"
-                  title="Delete"
-                  @click="openDelete(routine)"
-                >
-                  🗑️
-                </button>
-                <button
-                  v-if="isAuthenticated"
-                  class="btn btn--ghost btn--sm"
-                  title="Run Now"
-                  :disabled="runNowLoading[routine.id]"
-                  @click="runNow(routine)"
-                >
-                  {{ runNowLoading[routine.id] ? '…' : '▶ Run' }}
-                </button>
-                <span v-if="runNowSuccess[routine.id]" class="inline-success">Started!</span>
-                <span v-else-if="runNowError[routine.id]" class="inline-error">
-                  {{ runNowError[routine.id] }}
-                </span>
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <!-- ── Panel 2: Currently Executing ──────────────────────────────────── -->
-    <div class="panel">
-      <h2 class="panel__title">Currently Executing</h2>
-
-      <div v-if="activeError" class="alert alert--error">{{ activeError.message }}</div>
-
-      <div class="table-wrapper">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Routine Name</th>
-              <th>Triggered By</th>
-              <th>Elapsed</th>
-            </tr>
-          </thead>
-          <tbody v-if="loadingActive">
-            <tr>
-              <td colspan="3" class="state-cell">
-                <span class="spinner" aria-label="Loading" />
-              </td>
-            </tr>
-          </tbody>
-          <tbody v-else-if="!activeExecutions || activeExecutions.length === 0">
-            <tr>
-              <td colspan="3" class="state-cell">No routines currently running.</td>
-            </tr>
-          </tbody>
-          <tbody v-else>
-            <tr v-for="exec in activeExecutions" :key="exec.id" class="data-row">
-              <td>
-                <RouterLink :to="`/routines/${exec.routine_id}`" class="row-link">
+    <!-- ── Panels 2 & 3: Executing + History ──────────────────────────────── -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <!-- Currently Executing -->
+      <div class="border border-slate-200 rounded-lg overflow-hidden">
+        <div class="px-4 py-3 border-b border-slate-200">
+          <h2 class="text-sm font-semibold text-slate-900 m-0">Currently Executing</h2>
+        </div>
+        <div v-if="activeError" class="px-4 py-2 text-sm text-red-600">{{ activeError.message }}</div>
+        <div v-if="loadingActive" class="px-4 py-6 text-center text-sm text-slate-400">Loading…</div>
+        <div v-else-if="!activeExecutions || !activeExecutions.length" class="px-4 py-6 text-center text-sm text-slate-400">
+          None running
+        </div>
+        <table v-else class="w-full text-sm border-collapse">
+          <tbody>
+            <tr v-for="exec in activeExecutions" :key="exec.id" class="border-t border-slate-100">
+              <td class="px-4 py-2.5 font-medium text-slate-800">
+                <RouterLink :to="`/routines/${exec.routine_id}`" class="text-indigo-700 font-medium no-underline hover:underline">
                   {{ exec.routine_name }}
                 </RouterLink>
               </td>
-              <td>
-                <span class="badge badge--neutral">{{ exec.triggered_by }}</span>
-              </td>
-              <td class="text-muted">{{ elapsedSeconds(exec.started_at) }}s</td>
+              <td class="px-4 py-2.5"><Tag value="running" severity="warn" /></td>
+              <td class="px-4 py-2.5 text-slate-400 text-xs">{{ exec.triggered_by }}</td>
+              <td class="px-4 py-2.5 text-slate-400 text-xs">{{ elapsedSeconds(exec.started_at) }}s</td>
             </tr>
           </tbody>
         </table>
       </div>
-    </div>
 
-    <!-- ── Panel 3: Recent History ────────────────────────────────────────── -->
-    <div class="panel">
-      <h2 class="panel__title">Recent History</h2>
-
-      <div v-if="historyError" class="alert alert--error">{{ historyError.message }}</div>
-
-      <div class="table-wrapper">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Routine Name</th>
-              <th>Status</th>
-              <th>Triggered By</th>
-              <th>Duration</th>
-            </tr>
-          </thead>
-          <tbody v-if="loadingHistory">
-            <tr>
-              <td colspan="4" class="state-cell">
-                <span class="spinner" aria-label="Loading" />
-              </td>
-            </tr>
-          </tbody>
-          <tbody v-else-if="!historyExecutions || historyExecutions.length === 0">
-            <tr>
-              <td colspan="4" class="state-cell">No execution history.</td>
-            </tr>
-          </tbody>
-          <tbody v-else>
-            <tr v-for="exec in historyExecutions" :key="exec.id" class="data-row">
-              <td>
-                <RouterLink :to="`/routines/${exec.routine_id}`" class="row-link">
+      <!-- Recent History -->
+      <div class="border border-slate-200 rounded-lg overflow-hidden">
+        <div class="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-slate-900 m-0">Recent History</h2>
+          <div class="flex items-center gap-3">
+            <select v-model="historyLimit" class="text-xs border border-slate-200 rounded px-1.5 py-0.5 text-slate-600 bg-white">
+              <option :value="5">5</option>
+              <option :value="10">10</option>
+              <option :value="20">20</option>
+            </select>
+            <RouterLink to="/history" class="text-xs text-indigo-600 hover:underline font-medium no-underline">View all →</RouterLink>
+          </div>
+        </div>
+        <div v-if="historyError" class="px-4 py-2 text-sm text-red-600">{{ historyError.message }}</div>
+        <div v-if="loadingHistory" class="px-4 py-6 text-center text-sm text-slate-400">Loading…</div>
+        <div v-else-if="!historyExecutions || !historyExecutions.length" class="px-4 py-6 text-center text-sm text-slate-400">
+          No history
+        </div>
+        <table v-else class="w-full text-sm border-collapse">
+          <tbody>
+            <tr v-for="exec in historyExecutions" :key="exec.id" class="border-t border-slate-100">
+              <td class="px-4 py-2.5 font-medium text-slate-800">
+                <RouterLink :to="`/routines/${exec.routine_id}`" class="text-indigo-700 font-medium no-underline hover:underline">
                   {{ exec.routine_name }}
                 </RouterLink>
               </td>
-              <td>
-                <span class="badge" :class="statusBadgeClass(exec.status)">{{ exec.status }}</span>
+              <td class="px-4 py-2.5">
+                <Tag
+                  :value="exec.status"
+                  :severity="exec.status === 'completed' ? 'success' : exec.status === 'failed' ? 'danger' : 'warn'"
+                />
               </td>
-              <td>
-                <span class="badge badge--neutral">{{ exec.triggered_by }}</span>
-              </td>
-              <td class="text-muted">
+              <td class="px-4 py-2.5 text-slate-400 text-xs">{{ exec.triggered_by }}</td>
+              <td class="px-4 py-2.5 text-slate-400 text-xs">
                 {{ durationSeconds(exec.started_at, exec.completed_at) !== null ? `${durationSeconds(exec.started_at, exec.completed_at)}s` : '—' }}
               </td>
             </tr>
@@ -176,107 +117,98 @@
       </div>
     </div>
 
-    <!-- ── Create / Edit dialog ───────────────────────────────────────────── -->
-    <dialog ref="formDialog" class="modal" @click.self="formDialog?.close()">
-      <div class="modal__box">
-        <h2 class="modal__title">{{ editingRoutine ? 'Edit Routine' : 'New Routine' }}</h2>
-        <form @submit.prevent="submitForm">
-          <div class="form-field">
-            <label class="form-label" for="routine-name">Name *</label>
-            <input
-              id="routine-name"
-              v-model="form.name"
-              class="form-input"
-              type="text"
-              required
-              placeholder="Enter name"
-            />
-          </div>
-          <div class="form-field">
-            <label class="form-label" for="routine-desc">Description</label>
-            <textarea
-              id="routine-desc"
-              v-model="form.description"
-              class="form-input form-textarea"
-              placeholder="Optional description"
-              rows="3"
-            />
-          </div>
-          <div class="form-field">
-            <label class="form-label" for="routine-schedule-type">Schedule Type</label>
-            <select id="routine-schedule-type" v-model="form.schedule_type" class="form-input">
-              <option value="manual">manual</option>
-              <option value="cron">cron</option>
-              <option value="interval">interval</option>
-            </select>
-          </div>
-          <div v-if="form.schedule_type === 'cron'" class="form-field">
-            <label class="form-label" for="routine-cron">Cron Expression</label>
-            <input
-              id="routine-cron"
-              v-model="cronExpression"
-              class="form-input"
-              type="text"
-              placeholder="e.g. 0 * * * *"
-            />
-          </div>
-          <div v-if="form.schedule_type === 'interval'" class="form-field">
-            <label class="form-label" for="routine-interval">Interval (seconds)</label>
-            <input
-              id="routine-interval"
-              v-model.number="intervalSeconds"
-              class="form-input"
-              type="number"
-              min="1"
-              placeholder="e.g. 60"
-            />
-          </div>
-          <div class="form-field form-field--inline">
-            <input
-              id="routine-active"
-              v-model="form.is_active"
-              class="form-checkbox"
-              type="checkbox"
-            />
-            <label class="form-label" for="routine-active">Active</label>
-          </div>
-          <div v-if="formError" class="alert alert--error">{{ formError }}</div>
-          <div class="modal__actions">
-            <button type="button" class="btn btn--ghost" @click="formDialog?.close()">Cancel</button>
-            <button type="submit" class="btn btn--primary" :disabled="submitting">
-              {{ submitting ? 'Saving…' : 'Save' }}
-            </button>
-          </div>
-        </form>
-      </div>
-    </dialog>
-
-    <!-- ── Delete confirmation dialog ────────────────────────────────────── -->
-    <dialog ref="deleteDialog" class="modal" @click.self="deleteDialog?.close()">
-      <div class="modal__box modal__box--sm">
-        <h2 class="modal__title">Delete Routine</h2>
-        <p class="modal__body">
-          Delete routine <strong>{{ deletingRoutine?.name }}</strong>? This cannot be undone.
-        </p>
-        <div v-if="deleteError" class="alert alert--error">{{ deleteError }}</div>
-        <div class="modal__actions">
-          <button class="btn btn--ghost" @click="deleteDialog?.close()">Cancel</button>
-          <button class="btn btn--danger" :disabled="deleting" @click="confirmDelete">
-            {{ deleting ? 'Deleting…' : 'Delete' }}
-          </button>
+    <!-- ── Create / Edit Dialog ───────────────────────────────────────────── -->
+    <Dialog
+      :visible="formDialogOpen"
+      :modal="true"
+      :header="editingRoutine ? 'Edit Routine' : 'New Routine'"
+      @update:visible="formDialogOpen = false"
+    >
+      <form @submit.prevent="submitForm" class="flex flex-col gap-4">
+        <div class="flex flex-col gap-1">
+          <label for="routineName" class="text-sm font-medium text-slate-700">Name</label>
+          <InputText inputId="routineName" v-model="form.name" placeholder="Enter name" required />
         </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-sm font-medium text-slate-700">Description</label>
+          <Textarea v-model="form.description" rows="3" placeholder="Optional description" />
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-sm font-medium text-slate-700">Schedule Type</label>
+          <Select
+            v-model="form.schedule_type"
+            :options="[{ label: 'manual', value: 'manual' }, { label: 'cron', value: 'cron' }, { label: 'interval', value: 'interval' }]"
+            option-label="label"
+            option-value="value"
+            class="w-full"
+          />
+        </div>
+        <div v-if="form.schedule_type === 'cron'" class="flex flex-col gap-1">
+          <label class="text-sm font-medium text-slate-700">Cron Expression</label>
+          <InputText v-model="cronExpression" placeholder="e.g. 0 * * * *" />
+        </div>
+        <div v-if="form.schedule_type === 'interval'" class="flex flex-col gap-1">
+          <label class="text-sm font-medium text-slate-700">Interval (seconds)</label>
+          <InputText v-model="intervalSecondsStr" type="number" min="1" placeholder="e.g. 60" />
+        </div>
+        <div class="flex items-center gap-2">
+          <Checkbox v-model="form.is_active" :binary="true" inputId="isActive" />
+          <label for="isActive" class="text-sm text-slate-700">Active</label>
+        </div>
+        <div v-if="formError" class="px-4 py-2.5 rounded-md text-sm bg-red-50 text-red-600 border border-red-200">
+          {{ formError }}
+        </div>
+      </form>
+      <template #footer>
+        <Button label="Cancel" severity="secondary" @click="formDialogOpen = false" />
+        <Button
+          :label="submitting ? 'Saving…' : (editingRoutine ? 'Update' : 'Create')"
+          :disabled="submitting"
+          @click="submitForm"
+        />
+      </template>
+    </Dialog>
+
+    <!-- ── Delete Confirmation Dialog ────────────────────────────────────── -->
+    <Dialog
+      :visible="deleteDialogOpen"
+      :modal="true"
+      header="Delete Routine"
+      @update:visible="deleteDialogOpen = false"
+    >
+      <p class="text-sm text-slate-600">
+        Delete routine <strong>{{ deletingRoutine?.name }}</strong>? This cannot be undone.
+      </p>
+      <div v-if="deleteError" class="px-4 py-2.5 rounded-md text-sm bg-red-50 text-red-600 border border-red-200">
+        {{ deleteError }}
       </div>
-    </dialog>
+      <template #footer>
+        <Button label="Cancel" severity="secondary" @click="deleteDialogOpen = false" />
+        <Button label="Delete" severity="danger" :disabled="deleting" @click="confirmDelete" />
+      </template>
+    </Dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
+import Button from 'primevue/button'
+import DataTable from 'primevue/datatable'
+import Column from 'primevue/column'
+import Dialog from 'primevue/dialog'
+import InputText from 'primevue/inputtext'
+import Textarea from 'primevue/textarea'
+import Select from 'primevue/select'
+import Checkbox from 'primevue/checkbox'
+import Tag from 'primevue/tag'
+import { useToast } from 'primevue/usetoast'
 import { routinesApi } from '../api/routines'
 import { usePolling } from '../composables/usePolling'
 import { useAuth } from '../composables/useAuth'
 import type { Routine, RoutineCreate, RoutineUpdate } from '../types/routine'
 
+const toast = useToast()
 const { isAuthenticated } = useAuth()
 
 // ── Panel 1: Configured Routines (local state, not polled) ─────────────────
@@ -309,11 +241,16 @@ const {
 } = usePolling(() => routinesApi.activeExecutions(), 3000)
 
 // ── Panel 3: Recent History (polled every 5s) ──────────────────────────────
+const historyLimit = ref<number>(10)
+
 const {
   data: historyExecutions,
   loading: loadingHistory,
   error: historyError,
-} = usePolling(() => routinesApi.executionHistory(10), 5000)
+  refresh: refreshHistory,
+} = usePolling(() => routinesApi.executionHistory(historyLimit.value), 5000)
+
+watch(historyLimit, () => { void refreshHistory() })
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function elapsedSeconds(startedAt: string): number {
@@ -325,20 +262,8 @@ function durationSeconds(startedAt: string, completedAt: string | null): number 
   return Math.floor((new Date(completedAt).getTime() - new Date(startedAt).getTime()) / 1000)
 }
 
-function scheduleBadgeClass(scheduleType: Routine['schedule_type']): string {
-  if (scheduleType === 'cron') return 'badge--cron'
-  if (scheduleType === 'interval') return 'badge--interval'
-  return 'badge--manual'
-}
-
-function statusBadgeClass(status: 'running' | 'completed' | 'failed'): string {
-  if (status === 'completed') return 'badge--success'
-  if (status === 'failed') return 'badge--error'
-  return 'badge--running'
-}
-
 // ── CREATE / EDIT dialog ───────────────────────────────────────────────────
-const formDialog = ref<HTMLDialogElement | null>(null)
+const formDialogOpen = ref(false)
 const editingRoutine = ref<Routine | null>(null)
 const form = ref<RoutineCreate>({
   name: '',
@@ -353,6 +278,10 @@ const submitting = ref(false)
 // Local helpers for cron/interval schedule_config fields
 const cronExpression = ref('')
 const intervalSeconds = ref<number>(60)
+const intervalSecondsStr = computed({
+  get: () => String(intervalSeconds.value),
+  set: (v: string) => { intervalSeconds.value = parseInt(v, 10) || 60 },
+})
 
 // Derive schedule_config from local helpers
 const scheduleConfig = computed<RoutineCreate['schedule_config']>(() => {
@@ -371,7 +300,7 @@ function openCreate(): void {
   cronExpression.value = ''
   intervalSeconds.value = 60
   formError.value = null
-  formDialog.value?.showModal()
+  formDialogOpen.value = true
 }
 
 function openEdit(routine: Routine): void {
@@ -395,7 +324,7 @@ function openEdit(routine: Routine): void {
     intervalSeconds.value = 60
   }
   formError.value = null
-  formDialog.value?.showModal()
+  formDialogOpen.value = true
 }
 
 async function submitForm(): Promise<void> {
@@ -414,7 +343,7 @@ async function submitForm(): Promise<void> {
       const created = await routinesApi.create(payload)
       routines.value.unshift(created)
     }
-    formDialog.value?.close()
+    formDialogOpen.value = false
   } catch (e) {
     formError.value = e instanceof Error ? e.message : 'Save failed'
   } finally {
@@ -423,7 +352,7 @@ async function submitForm(): Promise<void> {
 }
 
 // ── DELETE dialog ──────────────────────────────────────────────────────────
-const deleteDialog = ref<HTMLDialogElement | null>(null)
+const deleteDialogOpen = ref(false)
 const deletingRoutine = ref<Routine | null>(null)
 const deleteError = ref<string | null>(null)
 const deleting = ref(false)
@@ -431,7 +360,7 @@ const deleting = ref(false)
 function openDelete(routine: Routine): void {
   deletingRoutine.value = routine
   deleteError.value = null
-  deleteDialog.value?.showModal()
+  deleteDialogOpen.value = true
 }
 
 async function confirmDelete(): Promise<void> {
@@ -441,7 +370,7 @@ async function confirmDelete(): Promise<void> {
   try {
     await routinesApi.delete(deletingRoutine.value.id)
     routines.value = routines.value.filter((r) => r.id !== deletingRoutine.value!.id)
-    deleteDialog.value?.close()
+    deleteDialogOpen.value = false
   } catch (e) {
     deleteError.value = e instanceof Error ? e.message : 'Delete failed'
   } finally {
@@ -450,388 +379,19 @@ async function confirmDelete(): Promise<void> {
 }
 
 // ── RUN NOW ────────────────────────────────────────────────────────────────
-const runNowError = ref<Record<number, string>>({})
 const runNowLoading = ref<Record<number, boolean>>({})
-const runNowSuccess = ref<Record<number, boolean>>({})
 
 async function runNow(routine: Routine): Promise<void> {
-  delete runNowError.value[routine.id]
-  delete runNowSuccess.value[routine.id]
   runNowLoading.value[routine.id] = true
   try {
     await routinesApi.runNow(routine.id)
-    runNowSuccess.value[routine.id] = true
+    toast.add({ severity: 'success', summary: 'Started', detail: `${routine.name} is running`, life: 3000 })
     await refreshActive()
-    // Clear success indicator after 3 seconds
-    setTimeout(() => {
-      delete runNowSuccess.value[routine.id]
-    }, 3000)
   } catch (e) {
-    runNowError.value[routine.id] = e instanceof Error ? e.message : 'Failed to start'
+    const msg = e instanceof Error ? e.message : 'Failed to start'
+    toast.add({ severity: msg.includes('already running') ? 'warn' : 'error', summary: 'Run Now', detail: msg, life: 4000 })
   } finally {
     delete runNowLoading.value[routine.id]
   }
 }
-
 </script>
-
-<style scoped>
-.list-view {
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-}
-
-.list-view__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.list-view__title {
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: #1e293b;
-  margin: 0;
-}
-
-/* Panel */
-.panel {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.panel__title {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: #1e293b;
-  margin: 0;
-}
-
-/* Table */
-.table-wrapper {
-  overflow-x: auto;
-  border: 1px solid #e2e8f0;
-  border-radius: 0.5rem;
-}
-
-.data-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.875rem;
-}
-
-.data-table th {
-  background: #f8fafc;
-  padding: 0.625rem 1rem;
-  text-align: left;
-  font-weight: 600;
-  color: #475569;
-  border-bottom: 1px solid #e2e8f0;
-  user-select: none;
-  white-space: nowrap;
-}
-
-.data-table td {
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid #f1f5f9;
-  color: #1e293b;
-}
-
-.data-row:last-child td {
-  border-bottom: none;
-}
-
-.data-row:hover td {
-  background: #f8fafc;
-}
-
-.col-actions {
-  width: 180px;
-  text-align: right;
-}
-
-.action-cell {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.375rem;
-  flex-wrap: wrap;
-}
-
-.state-cell {
-  text-align: center;
-  color: #94a3b8;
-  padding: 2.5rem 1rem;
-  cursor: default;
-}
-
-.text-muted {
-  color: #64748b;
-}
-
-.row-link {
-  color: #3730a3;
-  text-decoration: none;
-  font-weight: 500;
-}
-
-.row-link:hover {
-  text-decoration: underline;
-}
-
-/* Badge */
-.badge {
-  display: inline-block;
-  padding: 0.2rem 0.55rem;
-  border-radius: 9999px;
-  font-size: 0.75rem;
-  font-weight: 500;
-  text-transform: capitalize;
-}
-
-.badge--manual {
-  background: #f1f5f9;
-  color: #475569;
-}
-
-.badge--cron {
-  background: #ede9fe;
-  color: #5b21b6;
-}
-
-.badge--interval {
-  background: #e0f2fe;
-  color: #0369a1;
-}
-
-.badge--neutral {
-  background: #f1f5f9;
-  color: #475569;
-}
-
-.badge--running {
-  background: #fef9c3;
-  color: #92400e;
-}
-
-.badge--success {
-  background: #dcfce7;
-  color: #15803d;
-}
-
-.badge--error {
-  background: #fef2f2;
-  color: #dc2626;
-}
-
-/* Active checkmark */
-.checkmark {
-  color: #16a34a;
-  font-weight: 700;
-}
-
-/* Inline run-now feedback */
-.inline-error {
-  font-size: 0.75rem;
-  color: #dc2626;
-}
-
-.inline-success {
-  font-size: 0.75rem;
-  color: #16a34a;
-  font-weight: 500;
-}
-
-/* Spinner */
-.spinner {
-  display: inline-block;
-  width: 1.25rem;
-  height: 1.25rem;
-  border: 2px solid #e2e8f0;
-  border-top-color: #6366f1;
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* Buttons */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  padding: 0.5rem 1rem;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  border: 1px solid transparent;
-  transition:
-    background 0.15s,
-    color 0.15s,
-    border-color 0.15s;
-}
-
-.btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.btn--sm {
-  padding: 0.25rem 0.625rem;
-  font-size: 0.8125rem;
-}
-
-.btn--primary {
-  background: #4f46e5;
-  color: #fff;
-}
-
-.btn--primary:hover:not(:disabled) {
-  background: #4338ca;
-}
-
-.btn--ghost {
-  background: transparent;
-  color: #475569;
-  border-color: #cbd5e1;
-}
-
-.btn--ghost:hover:not(:disabled) {
-  background: #f1f5f9;
-}
-
-.btn--danger {
-  background: #dc2626;
-  color: #fff;
-}
-
-.btn--danger:hover:not(:disabled) {
-  background: #b91c1c;
-}
-
-.btn-icon {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0.25rem;
-  font-size: 1rem;
-  border-radius: 0.25rem;
-  line-height: 1;
-  transition: background 0.15s;
-}
-
-.btn-icon:hover {
-  background: #e2e8f0;
-}
-
-/* Modal */
-.modal {
-  padding: 0;
-  border: none;
-  border-radius: 0.75rem;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
-  max-width: 92vw;
-}
-
-.modal::backdrop {
-  background: rgba(15, 23, 42, 0.45);
-}
-
-.modal__box {
-  width: 480px;
-  padding: 1.75rem;
-}
-
-.modal__box--sm {
-  width: 400px;
-}
-
-.modal__title {
-  font-size: 1.125rem;
-  font-weight: 600;
-  margin: 0 0 1.25rem;
-  color: #1e293b;
-}
-
-.modal__body {
-  color: #475569;
-  margin: 0 0 1.25rem;
-  line-height: 1.5;
-}
-
-.modal__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.75rem;
-  margin-top: 1.5rem;
-}
-
-/* Form */
-.form-field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
-  margin-bottom: 1rem;
-}
-
-.form-field--inline {
-  flex-direction: row;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.form-label {
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: #374151;
-}
-
-.form-input {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid #cbd5e1;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
-  color: #1e293b;
-  outline: none;
-  transition:
-    border-color 0.15s,
-    box-shadow 0.15s;
-  font-family: inherit;
-}
-
-.form-input:focus {
-  border-color: #6366f1;
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
-}
-
-.form-textarea {
-  resize: vertical;
-}
-
-.form-checkbox {
-  width: 1rem;
-  height: 1rem;
-  cursor: pointer;
-}
-
-/* Alert */
-.alert {
-  padding: 0.625rem 1rem;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
-  margin-bottom: 0.75rem;
-}
-
-.alert--error {
-  background: #fef2f2;
-  color: #dc2626;
-  border: 1px solid #fecaca;
-}
-</style>

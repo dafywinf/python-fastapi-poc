@@ -2,6 +2,7 @@
 import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
+import ProgressSpinner from 'primevue/progressspinner'
 
 const router = useRouter()
 const { setToken } = useAuth()
@@ -22,17 +23,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="callback-page">
-    <p>Signing you in…</p>
+  <div class="flex items-center justify-center min-h-[70vh] gap-3 text-slate-500">
+    <ProgressSpinner class="w-8 h-8" />
+    <span class="text-sm">Signing you in…</span>
   </div>
 </template>
-
-<style scoped>
-.callback-page {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 60vh;
-  color: #94a3b8;
-}
-</style>

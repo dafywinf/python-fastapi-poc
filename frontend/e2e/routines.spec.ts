@@ -29,8 +29,8 @@ test.describe('Routines', () => {
     await expect(dialog).toBeVisible()
 
     // Fill form
-    await dialog.getByLabel('Name').fill('E2E Test Routine')
-    await dialog.getByRole('button', { name: 'Save' }).click()
+    await dialog.getByPlaceholder('Enter name').fill('E2E Test Routine')
+    await dialog.getByRole('button', { name: 'Create' }).click()
 
     // Row should appear
     await expect(routinesPage.row('E2E Test Routine')).toBeVisible()

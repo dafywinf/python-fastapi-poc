@@ -2,8 +2,7 @@
  * Component tests for RoutinesView.
  *
  * The routinesApi module is mocked with vi.mock — components should not know
- * or care about HTTP; they call the API and react to the results. Native
- * <dialog> methods are polyfilled because jsdom does not implement them.
+ * or care about HTTP; they call the API and react to the results.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -11,6 +10,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createMemoryHistory, type RouteRecordRaw } from 'vue-router'
 import { computed, ref } from 'vue'
 import * as allure from 'allure-js-commons'
+import ToastService from 'primevue/toastservice'
 import RoutinesView from '../views/RoutinesView.vue'
 
 vi.mock('../api/routines', () => ({
@@ -49,9 +49,6 @@ vi.mock('../composables/usePolling', () => ({
   }),
 }))
 
-HTMLDialogElement.prototype.showModal = vi.fn()
-HTMLDialogElement.prototype.close = vi.fn()
-
 function makeRouter(): ReturnType<typeof createRouter> {
   const routes: RouteRecordRaw[] = [
     { path: '/routines', component: RoutinesView },
@@ -67,7 +64,7 @@ describe('RoutinesView', () => {
   })
 
   it('renders headings', async () => {
-    const wrapper = mount(RoutinesView, { global: { plugins: [makeRouter()] } })
+    const wrapper = mount(RoutinesView, { global: { plugins: [makeRouter(), ToastService] } })
     await flushPromises()
     expect(wrapper.text()).toContain('Routines')
     expect(wrapper.text()).toContain('Currently Executing')
@@ -75,8 +72,13 @@ describe('RoutinesView', () => {
   })
 
   it('shows empty state when no routines', async () => {
-    const wrapper = mount(RoutinesView, { global: { plugins: [makeRouter()] } })
+    const wrapper = mount(RoutinesView, { global: { plugins: [makeRouter(), ToastService] } })
     await flushPromises()
-    expect(wrapper.text()).toContain('No routines')
+    // PrimeVue DataTable renders column headers with no rows when the list is empty
+    expect(wrapper.text()).toContain('Name')
+    expect(wrapper.text()).toContain('Schedule')
+    // Adjacent panels show their own empty states
+    expect(wrapper.text()).toContain('None running')
+    expect(wrapper.text()).toContain('No history')
   })
 })

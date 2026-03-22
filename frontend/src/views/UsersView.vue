@@ -2,10 +2,18 @@
 import { onMounted, ref } from 'vue'
 import { usersApi, type User } from '../api/users'
 import { formatDate } from '../utils/date'
+import DataTable from 'primevue/datatable'
+import Column from 'primevue/column'
+import Button from 'primevue/button'
+import Tag from 'primevue/tag'
 
 const users = ref<User[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
+
+function copyEmail(email: string): void {
+  void navigator.clipboard.writeText(email)
+}
 
 onMounted(async () => {
   try {
@@ -19,115 +27,69 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="users-page">
-    <h1 class="page-title">Users</h1>
+  <div class="p-6 max-w-4xl">
+    <h1 class="text-xl font-semibold text-slate-800 mb-5">Users</h1>
 
-    <p v-if="loading" class="state-message">Loading…</p>
-    <p v-else-if="error" class="state-message state-message--error">{{ error }}</p>
+    <p v-if="loading" class="text-slate-500 text-sm flex items-center gap-2">
+      <span class="inline-block w-4 h-4 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin"></span>
+      Loading…
+    </p>
 
-    <table v-else class="users-table">
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Email</th>
-          <th>Joined</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="user in users" :key="user.id">
-          <td class="user-name">
-            <img
-              v-if="user.picture"
-              :src="user.picture"
-              :alt="user.name"
-              class="user-avatar"
+    <p v-else-if="error" class="text-red-400 text-sm">{{ error }}</p>
+
+    <div v-else class="bg-white border border-slate-200 rounded-lg overflow-hidden">
+      <DataTable :value="users" :rows="20" stripedRows>
+        <Column header="Name">
+          <template #body="{ data }: { data: User }">
+            <div class="flex items-center gap-2.5">
+              <img
+                v-if="data.picture"
+                :src="data.picture"
+                :alt="data.name"
+                class="w-7 h-7 rounded-full object-cover flex-shrink-0"
+              />
+              <span
+                v-else
+                class="w-7 h-7 rounded-full bg-blue-500 text-white text-xs font-semibold flex items-center justify-center flex-shrink-0"
+              >
+                {{ data.name.charAt(0).toUpperCase() }}
+              </span>
+              <span>{{ data.name }}</span>
+            </div>
+          </template>
+        </Column>
+
+        <Column field="email" header="Email" />
+
+        <Column header="Joined">
+          <template #body="{ data }: { data: User }">
+            {{ formatDate(data.created_at) }}
+          </template>
+        </Column>
+
+        <Column header="Status">
+          <template #body>
+            <Tag value="Active" severity="success" />
+          </template>
+        </Column>
+
+        <Column header="">
+          <template #body="{ data }: { data: User }">
+            <Button
+              icon="pi pi-copy"
+              text
+              rounded
+              size="small"
+              aria-label="Copy email"
+              @click="copyEmail(data.email)"
             />
-            <span v-else class="user-avatar user-avatar--placeholder">
-              {{ user.name.charAt(0).toUpperCase() }}
-            </span>
-            {{ user.name }}
-          </td>
-          <td>{{ user.email }}</td>
-          <td>{{ formatDate(user.created_at) }}</td>
-        </tr>
-        <tr v-if="users.length === 0">
-          <td colspan="3" class="empty-state">No users have logged in yet.</td>
-        </tr>
-      </tbody>
-    </table>
+          </template>
+        </Column>
+
+        <template #empty>
+          <p class="text-center text-slate-400 italic py-4 text-sm">No users have logged in yet.</p>
+        </template>
+      </DataTable>
+    </div>
   </div>
 </template>
-
-<style scoped>
-.users-page {
-  padding: 1.5rem;
-  max-width: 800px;
-}
-
-.page-title {
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: #f8fafc;
-  margin-bottom: 1.25rem;
-}
-
-.state-message {
-  color: #94a3b8;
-  font-size: 0.875rem;
-}
-
-.state-message--error {
-  color: #f87171;
-}
-
-.users-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.875rem;
-}
-
-.users-table th {
-  text-align: left;
-  padding: 0.5rem 0.75rem;
-  color: #94a3b8;
-  border-bottom: 1px solid #334155;
-  font-weight: 500;
-}
-
-.users-table td {
-  padding: 0.625rem 0.75rem;
-  border-bottom: 1px solid #1e293b;
-  color: #e2e8f0;
-  vertical-align: middle;
-}
-
-.user-name {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-}
-
-.user-avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  object-fit: cover;
-  flex-shrink: 0;
-}
-
-.user-avatar--placeholder {
-  background: #3b82f6;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.empty-state {
-  color: #64748b;
-  font-style: italic;
-  text-align: center;
-}
-</style>
