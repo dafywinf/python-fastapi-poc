@@ -22,6 +22,7 @@ python-jose = {extras = ["cryptography"], version = "^3.5.0"}
 bcrypt = "^5.0.0"
 python-multipart = "^0.0.22"
 redis = ">=5.0,<6.0"
+apscheduler = "^3.11.2"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.8.0"
@@ -57,7 +58,7 @@ markers = [
     "perf: performance/timing tests (run with: just backend-perf)",
     "e2e: end-to-end tests against a live running stack (run with: just backend-e2e)",
 ]
-env = ["ENABLE_PASSWORD_AUTH=true"]
+env = ["ENABLE_PASSWORD_AUTH=true", "SCHEDULER_ENABLED=false"]
 
 [build-system]
 requires = ["poetry-core"]

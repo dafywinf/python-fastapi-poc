@@ -14,6 +14,8 @@ const { isAuthenticated, user, login, logout } = useAuth()
     <nav class="navbar__links">
       <RouterLink to="/sequences" class="navbar__link">Sequences</RouterLink>
       <RouterLink to="/users" class="navbar__link">Users</RouterLink>
+      <RouterLink to="/routines" class="navbar__link">Routines</RouterLink>
+      <RouterLink to="/history" class="navbar__link">History</RouterLink>
     </nav>
     <div class="navbar__auth">
       <template v-if="isAuthenticated && user">

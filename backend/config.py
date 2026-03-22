@@ -26,6 +26,8 @@ class Settings(BaseSettings):
         redis_url: Connection URL for the Redis instance used for OAuth2 state tokens.
             Defaults to localhost:6379 — matches the docker-compose redis service.
             For CI, fakeredis bypasses this URL entirely; no env var is needed.
+        scheduler_enabled: When True, APScheduler starts on application startup.
+            Defaults to True; set to False in tests via pytest-env.
     """
 
     database_url: str
@@ -41,6 +43,7 @@ class Settings(BaseSettings):
     backend_url: str = "http://localhost:8000"
     enable_password_auth: bool = False
     redis_url: str = "redis://localhost:6379/0"
+    scheduler_enabled: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
