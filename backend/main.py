@@ -2,14 +2,22 @@
 
 import logging
 import logging.config
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from prometheus_fastapi_instrumentator import Instrumentator
 from pythonjsonlogger.json import JsonFormatter
+from sqlalchemy import select
 
 from backend.config import settings
 from backend.exceptions import handle_exception
 from backend.routes import router
+from backend.routine_routes import (
+    actions_router,
+    executions_router,
+    routines_router,
+)
 from backend.user_routes import router as user_router
 
 logging.config.dictConfig(
@@ -53,16 +61,49 @@ if settings.loki_url is not None:
             exc_info=True,
         )
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # type: ignore[type-arg]
+    """Start APScheduler on startup if enabled; shut it down on exit."""
+    if settings.scheduler_enabled:
+        from backend.database import SessionLocal
+        from backend.models import Routine
+        from backend.scheduler import register_routine, scheduler
+
+        with SessionLocal() as session:
+            routines = list(
+                session.execute(
+                    select(Routine).where(
+                        Routine.is_active == True,  # noqa: E712
+                        Routine.schedule_type != "manual",
+                    )
+                ).scalars()
+            )
+        for routine in routines:
+            register_routine(routine)
+        scheduler.start()  # pyright: ignore[reportUnknownMemberType]
+        app.state.scheduler = scheduler
+    yield
+    if settings.scheduler_enabled:
+        from backend.scheduler import scheduler
+
+        scheduler.shutdown(wait=False)  # pyright: ignore[reportUnknownMemberType]
+
+
 app = FastAPI(
     title="Sequence Manager",
     description="A simple FastAPI application for managing Sequence entities.",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 Instrumentator().instrument(app).expose(app)  # pyright: ignore[reportUnknownMemberType]
 
 app.include_router(router)
 app.include_router(user_router)
+app.include_router(routines_router)
+app.include_router(actions_router)
+app.include_router(executions_router)
 
 if settings.enable_password_auth:
     from backend.auth_routes import router as auth_router

@@ -38,3 +38,4 @@ frontend/allure-results/
 frontend/allure-results-e2e/
 frontend/allure-report/
 frontend/test-results/
+.worktrees/

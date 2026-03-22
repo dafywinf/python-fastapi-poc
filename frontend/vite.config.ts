@@ -47,6 +47,30 @@ export default defineConfig({
           return null
         },
       },
+      '/routines': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        bypass(req) {
+          if (req.headers.accept?.includes('text/html')) return '/index.html'
+          return null
+        },
+      },
+      '/actions': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        bypass(req) {
+          if (req.headers.accept?.includes('text/html')) return '/index.html'
+          return null
+        },
+      },
+      '/executions': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        bypass(req) {
+          if (req.headers.accept?.includes('text/html')) return '/index.html'
+          return null
+        },
+      },
       '/health': {
         target: 'http://localhost:8000',
         changeOrigin: true,
