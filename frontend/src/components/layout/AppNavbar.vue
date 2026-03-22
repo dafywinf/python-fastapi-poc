@@ -1,104 +1,28 @@
 <script setup lang="ts">
+import Button from 'primevue/button'
 import { useAuth } from '../../composables/useAuth'
 
 const { isAuthenticated, user, login, logout } = useAuth()
 </script>
 
 <template>
-  <header class="navbar">
-    <div class="navbar__brand">
-      <RouterLink to="/sequences" class="navbar__logo">
-        Sequence Manager
+  <header class="flex items-center justify-between px-6 h-14 bg-slate-800 text-slate-100 flex-shrink-0 border-b border-slate-700">
+    <div class="flex items-center gap-6">
+      <RouterLink to="/routines" class="text-base font-semibold text-white tracking-tight no-underline">
+        Home Auto
       </RouterLink>
+      <nav class="flex gap-4">
+        <RouterLink to="/routines" class="text-sm text-slate-400 no-underline hover:text-white transition-colors [&.router-link-active]:text-white">Routines</RouterLink>
+        <RouterLink to="/history" class="text-sm text-slate-400 no-underline hover:text-white transition-colors [&.router-link-active]:text-white">History</RouterLink>
+        <RouterLink to="/users" class="text-sm text-slate-400 no-underline hover:text-white transition-colors [&.router-link-active]:text-white">Users</RouterLink>
+      </nav>
     </div>
-    <nav class="navbar__links">
-      <RouterLink to="/sequences" class="navbar__link">Sequences</RouterLink>
-      <RouterLink to="/users" class="navbar__link">Users</RouterLink>
-      <RouterLink to="/routines" class="navbar__link">Routines</RouterLink>
-      <RouterLink to="/history" class="navbar__link">History</RouterLink>
-    </nav>
-    <div class="navbar__auth">
+    <div class="flex items-center gap-3">
       <template v-if="isAuthenticated && user">
-        <span class="navbar__user-email">{{ user.email }}</span>
-        <button class="navbar__logout-btn" @click="logout">Logout</button>
+        <span class="text-xs text-slate-400" data-testid="user-email">{{ user.email }}</span>
+        <Button label="Logout" size="small" severity="secondary" @click="logout" />
       </template>
-      <button v-else class="navbar__login-btn" @click="login">
-        Sign in with Google
-      </button>
+      <Button v-else label="Sign in with Google" size="small" @click="login" />
     </div>
   </header>
 </template>
-
-<style scoped>
-.navbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 1.5rem;
-  height: 56px;
-  background: #1e293b;
-  color: #f8fafc;
-  border-bottom: 1px solid #334155;
-  flex-shrink: 0;
-}
-
-.navbar__logo {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: #f8fafc;
-  text-decoration: none;
-  letter-spacing: -0.01em;
-}
-
-.navbar__links {
-  display: flex;
-  gap: 1rem;
-}
-
-.navbar__link {
-  color: #94a3b8;
-  text-decoration: none;
-  font-size: 0.875rem;
-  transition: color 0.15s;
-}
-
-.navbar__link:hover,
-.navbar__link.router-link-active {
-  color: #f8fafc;
-}
-
-.navbar__auth {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.navbar__user-email {
-  font-size: 0.8125rem;
-  color: #cbd5e1;
-}
-
-.navbar__login-btn,
-.navbar__logout-btn {
-  background: #3b82f6;
-  color: #fff;
-  border: none;
-  border-radius: 5px;
-  padding: 0.375rem 0.875rem;
-  font-size: 0.8125rem;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.navbar__logout-btn {
-  background: #475569;
-}
-
-.navbar__login-btn:hover {
-  background: #2563eb;
-}
-
-.navbar__logout-btn:hover {
-  background: #334155;
-}
-</style>

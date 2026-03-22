@@ -1,4 +1,4 @@
-"""Pydantic V2 DTOs for the Sequence resource and auth responses."""
+"""Pydantic V2 DTOs for auth, users, routines, actions, and executions."""
 
 from datetime import datetime
 from typing import Any, Literal
@@ -11,31 +11,6 @@ class TokenResponse(BaseModel):
 
     access_token: str
     token_type: str = "bearer"
-
-
-class SequenceCreate(BaseModel):
-    """Payload for creating a new Sequence."""
-
-    name: str
-    description: str | None = None
-
-
-class SequenceUpdate(BaseModel):
-    """Payload for updating an existing Sequence."""
-
-    name: str | None = None
-    description: str | None = None
-
-
-class SequenceResponse(BaseModel):
-    """Response DTO returned to the caller."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    name: str
-    description: str | None
-    created_at: datetime
 
 
 class UserResponse(BaseModel):

@@ -12,7 +12,6 @@ from sqlalchemy import select
 
 from backend.config import settings
 from backend.exceptions import handle_exception
-from backend.routes import router
 from backend.routine_routes import (
     actions_router,
     executions_router,
@@ -91,15 +90,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # type: ignore[
 
 
 app = FastAPI(
-    title="Sequence Manager",
-    description="A simple FastAPI application for managing Sequence entities.",
+    title="Home Automation API",
+    description=(
+        "A FastAPI application for managing home automation routines and actions."
+    ),
     version="0.1.0",
     lifespan=lifespan,
 )
 
 Instrumentator().instrument(app).expose(app)  # pyright: ignore[reportUnknownMemberType]
 
-app.include_router(router)
 app.include_router(user_router)
 app.include_router(routines_router)
 app.include_router(actions_router)

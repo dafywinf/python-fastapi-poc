@@ -48,94 +48,100 @@ class TestAuthToken:
 # Write endpoints — must reject unauthenticated requests
 # ---------------------------------------------------------------------------
 
+_ROUTINE_PAYLOAD = {
+    "name": "Test Routine",
+    "schedule_type": "manual",
+}
+
 
 @allure.epic("Backend")  # pyright: ignore[reportUnknownMemberType]
 @allure.feature("Security")  # pyright: ignore[reportUnknownMemberType]
 @allure.story("Write access control")  # pyright: ignore[reportUnknownMemberType]
 class TestWriteProtection:
-    def test_post_sequences_requires_auth(self, client: TestClient) -> None:
-        response = client.post("/sequences/", json={"name": "Sneaky"})
+    def test_post_routines_requires_auth(self, client: TestClient) -> None:
+        response = client.post("/routines/", json=_ROUTINE_PAYLOAD)
 
         assert response.status_code == 401
 
-    def test_patch_sequence_requires_auth(
+    def test_put_routine_requires_auth(
         self, client: TestClient, auth_headers: dict[str, str]
     ) -> None:
-        with allure.step("Create a sequence with valid auth"):  # pyright: ignore[reportUnknownMemberType]
+        with allure.step("Create a routine with valid auth"):  # pyright: ignore[reportUnknownMemberType]
             create_resp = client.post(
-                "/sequences/", json={"name": "Target"}, headers=auth_headers
+                "/routines/", json=_ROUTINE_PAYLOAD, headers=auth_headers
             )
             assert create_resp.status_code == 201
-            sequence_id = create_resp.json()["id"]
+            routine_id = create_resp.json()["id"]
 
-        with allure.step("Attempt PATCH without a token"):  # pyright: ignore[reportUnknownMemberType]
-            response = client.patch(
-                f"/sequences/{sequence_id}", json={"name": "Hijacked"}
+        with allure.step("Attempt PUT without a token"):  # pyright: ignore[reportUnknownMemberType]
+            response = client.put(
+                f"/routines/{routine_id}",
+                json={**_ROUTINE_PAYLOAD, "name": "Hijacked"},
             )
 
         assert response.status_code == 401
 
-    def test_delete_sequence_requires_auth(
+    def test_delete_routine_requires_auth(
         self, client: TestClient, auth_headers: dict[str, str]
     ) -> None:
-        with allure.step("Create a sequence with valid auth"):  # pyright: ignore[reportUnknownMemberType]
+        with allure.step("Create a routine with valid auth"):  # pyright: ignore[reportUnknownMemberType]
             create_resp = client.post(
-                "/sequences/", json={"name": "Doomed"}, headers=auth_headers
+                "/routines/", json=_ROUTINE_PAYLOAD, headers=auth_headers
             )
             assert create_resp.status_code == 201
-            sequence_id = create_resp.json()["id"]
+            routine_id = create_resp.json()["id"]
 
         with allure.step("Attempt DELETE without a token"):  # pyright: ignore[reportUnknownMemberType]
-            response = client.delete(f"/sequences/{sequence_id}")
+            response = client.delete(f"/routines/{routine_id}")
 
         assert response.status_code == 401
 
-    def test_post_sequences_succeeds_with_valid_token(
+    def test_post_routines_succeeds_with_valid_token(
         self, client: TestClient, auth_headers: dict[str, str]
     ) -> None:
         response = client.post(
-            "/sequences/", json={"name": "Authorised"}, headers=auth_headers
+            "/routines/", json=_ROUTINE_PAYLOAD, headers=auth_headers
         )
 
         assert response.status_code == 201
 
-    def test_patch_sequence_succeeds_with_valid_token(
+    def test_put_routine_succeeds_with_valid_token(
         self, client: TestClient, auth_headers: dict[str, str]
     ) -> None:
-        with allure.step("Create a sequence"):  # pyright: ignore[reportUnknownMemberType]
+        with allure.step("Create a routine"):  # pyright: ignore[reportUnknownMemberType]
             create_resp = client.post(
-                "/sequences/", json={"name": "Before"}, headers=auth_headers
+                "/routines/", json=_ROUTINE_PAYLOAD, headers=auth_headers
             )
-            sequence_id = create_resp.json()["id"]
+            routine_id = create_resp.json()["id"]
 
-        with allure.step("PATCH with a valid token"):  # pyright: ignore[reportUnknownMemberType]
-            response = client.patch(
-                f"/sequences/{sequence_id}",
-                json={"name": "After"},
+        with allure.step("PUT with a valid token"):  # pyright: ignore[reportUnknownMemberType]
+            response = client.put(
+                f"/routines/{routine_id}",
+                json={**_ROUTINE_PAYLOAD, "name": "Updated"},
                 headers=auth_headers,
             )
 
         assert response.status_code == 200
-        assert response.json()["name"] == "After"
+        assert response.json()["name"] == "Updated"
 
-    def test_delete_sequence_succeeds_with_valid_token(
+    def test_delete_routine_succeeds_with_valid_token(
         self, client: TestClient, auth_headers: dict[str, str]
     ) -> None:
-        with allure.step("Create a sequence"):  # pyright: ignore[reportUnknownMemberType]
+        with allure.step("Create a routine"):  # pyright: ignore[reportUnknownMemberType]
             create_resp = client.post(
-                "/sequences/", json={"name": "ToGo"}, headers=auth_headers
+                "/routines/", json=_ROUTINE_PAYLOAD, headers=auth_headers
             )
-            sequence_id = create_resp.json()["id"]
+            routine_id = create_resp.json()["id"]
 
         with allure.step("DELETE with a valid token"):  # pyright: ignore[reportUnknownMemberType]
-            response = client.delete(f"/sequences/{sequence_id}", headers=auth_headers)
+            response = client.delete(f"/routines/{routine_id}", headers=auth_headers)
 
         assert response.status_code == 204
 
     def test_returns_401_for_invalid_token(self, client: TestClient) -> None:
         response = client.post(
-            "/sequences/",
-            json={"name": "BadToken"},
+            "/routines/",
+            json=_ROUTINE_PAYLOAD,
             headers={"Authorization": "Bearer this.is.not.a.valid.jwt"},
         )
 
@@ -151,8 +157,8 @@ class TestWriteProtection:
             algorithm=settings.jwt_algorithm,
         )
         response = client.post(
-            "/sequences/",
-            json={"name": "Expired"},
+            "/routines/",
+            json=_ROUTINE_PAYLOAD,
             headers={"Authorization": f"Bearer {expired_token}"},
         )
 
@@ -169,8 +175,8 @@ class TestWriteProtection:
         )
         tampered = valid_token[:-4] + "xxxx"
         response = client.post(
-            "/sequences/",
-            json={"name": "Tampered"},
+            "/routines/",
+            json=_ROUTINE_PAYLOAD,
             headers={"Authorization": f"Bearer {tampered}"},
         )
 
@@ -183,8 +189,8 @@ class TestWriteProtection:
             algorithm=settings.jwt_algorithm,
         )
         response = client.post(
-            "/sequences/",
-            json={"name": "NoSub"},
+            "/routines/",
+            json=_ROUTINE_PAYLOAD,
             headers={"Authorization": f"Bearer {token_without_sub}"},
         )
 
@@ -200,22 +206,22 @@ class TestWriteProtection:
 @allure.feature("Security")  # pyright: ignore[reportUnknownMemberType]
 @allure.story("Public read access")  # pyright: ignore[reportUnknownMemberType]
 class TestReadPublic:
-    def test_list_sequences_accessible_without_auth(self, client: TestClient) -> None:
-        response = client.get("/sequences/")
+    def test_list_routines_accessible_without_auth(self, client: TestClient) -> None:
+        response = client.get("/routines/")
 
         assert response.status_code == 200
 
-    def test_retrieve_sequence_accessible_without_auth(
+    def test_retrieve_routine_accessible_without_auth(
         self, client: TestClient, auth_headers: dict[str, str]
     ) -> None:
-        with allure.step("Create a sequence with auth"):  # pyright: ignore[reportUnknownMemberType]
+        with allure.step("Create a routine with auth"):  # pyright: ignore[reportUnknownMemberType]
             create_resp = client.post(
-                "/sequences/", json={"name": "Public"}, headers=auth_headers
+                "/routines/", json=_ROUTINE_PAYLOAD, headers=auth_headers
             )
-            sequence_id = create_resp.json()["id"]
+            routine_id = create_resp.json()["id"]
 
-        with allure.step("Retrieve the sequence without auth"):  # pyright: ignore[reportUnknownMemberType]
-            response = client.get(f"/sequences/{sequence_id}")
+        with allure.step("Retrieve the routine without auth"):  # pyright: ignore[reportUnknownMemberType]
+            response = client.get(f"/routines/{routine_id}")
 
         assert response.status_code == 200
-        assert response.json()["name"] == "Public"
+        assert response.json()["name"] == "Test Routine"

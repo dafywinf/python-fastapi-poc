@@ -4,7 +4,7 @@
  * Backed by a Vue ref so that setToken() and logout() trigger reactive updates
  * immediately without needing to re-mount components or re-read localStorage.
  *
- * The localStorage key 'access_token' matches the existing api/sequences.ts client.
+ * The localStorage key 'access_token' is the well-known key used to persist the JWT.
  */
 
 import { computed, ref } from 'vue'

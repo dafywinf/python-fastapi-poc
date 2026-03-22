@@ -118,7 +118,7 @@ class TestGrafana:
         # The scrape interval is 15 s; polling avoids a hard sleep.
         for _ in range(5):
             httpx.get(f"{FASTAPI_URL}/health")
-            httpx.get(f"{FASTAPI_URL}/sequences/")
+            httpx.get(f"{FASTAPI_URL}/routines/")
 
         # Wait until Prometheus has scraped non-/metrics handler data AND
         # rate() resolves (requires ≥2 scrapes at 15 s interval).
@@ -267,7 +267,7 @@ class TestLoki:
         # Generate INFO traffic so the app emits log lines that Loki ingests
         for _ in range(5):
             httpx.get(f"{FASTAPI_URL}/health")
-            httpx.get(f"{FASTAPI_URL}/sequences/")
+            httpx.get(f"{FASTAPI_URL}/routines/")
 
         # Push a synthetic ERROR entry so the Error Count panel has data.
         # This exercises the full Loki ingestion path for error-level logs

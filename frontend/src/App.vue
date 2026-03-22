@@ -1,38 +1,18 @@
 <template>
-  <div class="app-shell">
+  <div class="flex flex-col h-screen overflow-hidden">
     <AppNavbar />
-    <div class="app-shell__body">
+    <div class="flex flex-1 overflow-hidden">
       <AppSidebar />
-      <main class="app-shell__main">
+      <main class="flex-1 overflow-y-auto p-7 bg-white">
         <RouterView />
       </main>
     </div>
+    <Toast />
   </div>
 </template>
 
 <script setup lang="ts">
+import Toast from 'primevue/toast'
 import AppNavbar from './components/layout/AppNavbar.vue'
 import AppSidebar from './components/layout/AppSidebar.vue'
 </script>
-
-<style scoped>
-.app-shell {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  overflow: hidden;
-}
-
-.app-shell__body {
-  display: flex;
-  flex: 1;
-  overflow: hidden;
-}
-
-.app-shell__main {
-  flex: 1;
-  overflow-y: auto;
-  padding: 1.75rem 2rem;
-  background: #ffffff;
-}
-</style>
