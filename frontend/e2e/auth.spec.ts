@@ -11,7 +11,7 @@ import { injectAuthToken } from './helpers/api'
  * it directly into localStorage — simulating a completed OAuth login.
  */
 
-const FRONTEND_URL = 'http://localhost:5173'
+const FRONTEND_URL = 'http://127.0.0.1:5173'
 
 test.describe('Auth UI', () => {
   test.beforeEach(async () => {

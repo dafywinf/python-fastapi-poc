@@ -6,7 +6,7 @@
  */
 import { request as pwRequest, type Page } from '@playwright/test'
 
-const BASE_API = 'http://localhost:8000'
+const BASE_API = 'http://127.0.0.1:8000'
 const ADMIN_USERNAME = 'admin'
 const ADMIN_PASSWORD = process.env['E2E_ADMIN_PASSWORD'] ?? 'admin'
 
@@ -45,7 +45,7 @@ async function withAuthedContext<T>(
  */
 export async function injectAuthToken(page: Page): Promise<void> {
   const token = await getToken()
-  await page.goto('http://localhost:5173')
+  await page.goto('http://127.0.0.1:5173')
   await page.evaluate((t) => localStorage.setItem('access_token', t), token)
 }
 

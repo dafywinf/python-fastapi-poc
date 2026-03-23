@@ -14,7 +14,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/auth': {
-        target: 'http://localhost:8000',
+        target: 'http://127.0.0.1:8000',
         changeOrigin: true,
         bypass(req) {
           // /auth/callback is a SPA route — the backend redirects here with
@@ -32,7 +32,7 @@ export default defineConfig({
         },
       },
       '/users': {
-        target: 'http://localhost:8000',
+        target: 'http://127.0.0.1:8000',
         changeOrigin: true,
         bypass(req) {
           // Browser navigations to /users are served the SPA so Vue Router handles the route.
@@ -44,7 +44,7 @@ export default defineConfig({
         },
       },
       '/routines': {
-        target: 'http://localhost:8000',
+        target: 'http://127.0.0.1:8000',
         changeOrigin: true,
         bypass(req) {
           if (req.headers.accept?.includes('text/html')) return '/index.html'
@@ -52,7 +52,7 @@ export default defineConfig({
         },
       },
       '/actions': {
-        target: 'http://localhost:8000',
+        target: 'http://127.0.0.1:8000',
         changeOrigin: true,
         bypass(req) {
           if (req.headers.accept?.includes('text/html')) return '/index.html'
@@ -60,7 +60,7 @@ export default defineConfig({
         },
       },
       '/executions': {
-        target: 'http://localhost:8000',
+        target: 'http://127.0.0.1:8000',
         changeOrigin: true,
         bypass(req) {
           if (req.headers.accept?.includes('text/html')) return '/index.html'
@@ -68,7 +68,7 @@ export default defineConfig({
         },
       },
       '/health': {
-        target: 'http://localhost:8000',
+        target: 'http://127.0.0.1:8000',
         changeOrigin: true,
       },
     },
