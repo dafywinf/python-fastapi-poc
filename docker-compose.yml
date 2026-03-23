@@ -1,3 +1,8 @@
+# Platform services — run from the HOST with `just platform-up`.
+# Accessible from inside the devcontainer via host.docker.internal.
+# Do NOT run docker-compose from inside the devcontainer unless you
+# have mounted the Docker socket (see .devcontainer/README.md opt-in section).
+
 services:
   db:
     image: postgres:16-alpine

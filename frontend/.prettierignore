@@ -1,0 +1,8 @@
+allure-report
+allure-results
+allure-results-e2e
+coverage
+dist
+node_modules
+playwright-report
+test-results

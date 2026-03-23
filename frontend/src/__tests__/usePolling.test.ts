@@ -3,6 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 import { usePolling } from '../composables/usePolling'
 import * as allure from 'allure-js-commons'
+import { applyFrontendAllureLabels } from '../test/allure'
 
 // Wrapper component to host the composable in a mounted context
 function makeWrapper(fn: () => Promise<unknown>, intervalMs: number) {
@@ -18,7 +19,7 @@ function makeWrapper(fn: () => Promise<unknown>, intervalMs: number) {
 
 describe('usePolling', () => {
   beforeEach(() => {
-    allure.epic('Frontend')
+    applyFrontendAllureLabels('Vitest', 'base')
     allure.feature('usePolling')
     vi.useFakeTimers()
   })
@@ -57,7 +58,8 @@ describe('usePolling', () => {
   })
 
   it('retains last-good data on error', async () => {
-    const fn = vi.fn()
+    const fn = vi
+      .fn()
       .mockResolvedValueOnce([1, 2])
       .mockRejectedValueOnce(new Error('boom'))
     const wrapper = mount(makeWrapper(fn, 1000))

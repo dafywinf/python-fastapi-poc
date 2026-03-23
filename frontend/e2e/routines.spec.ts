@@ -1,13 +1,18 @@
 import { test, expect } from '@playwright/test'
-import { injectAuthToken } from './helpers/api'
+import { allure } from 'allure-playwright'
+import { applyFrontendE2EAllureLabels } from './helpers/allure'
+import { createAction, createRoutine, injectAuthToken } from './helpers/api'
 import { RoutinesPage } from './pages/RoutinesPage'
 
 test.describe('Routines', () => {
   test.beforeEach(async ({ page }) => {
+    await applyFrontendE2EAllureLabels('Browser E2E', 'top')
+    await allure.feature('Routines UI')
     await injectAuthToken(page)
   })
 
   test('home page loads with three panels', async ({ page }) => {
+    await allure.story('Dashboard')
     const routinesPage = new RoutinesPage(page)
     await routinesPage.goto()
     await expect(routinesPage.heading).toBeVisible()
@@ -20,6 +25,7 @@ test.describe('Routines', () => {
   })
 
   test('creates a routine and it appears in the table', async ({ page }) => {
+    await allure.story('CRUD')
     const routinesPage = new RoutinesPage(page)
     await routinesPage.goto()
 
@@ -40,16 +46,24 @@ test.describe('Routines', () => {
     })
   })
 
-  test('run now appears in executing panel', async ({ page }) => {
+  test('run now starts a routine and records it in recent history', async ({
+    page,
+  }) => {
+    await allure.story('Execution')
+    const routine = await createRoutine('E2E Run Routine')
+    await createAction(routine.id, {
+      action_type: 'echo',
+      config: { message: 'hello from e2e' },
+    })
+
     const routinesPage = new RoutinesPage(page)
     await routinesPage.goto()
 
-    // Create a routine with a sleep action via the UI isn't practical in E2E;
-    // verify the run now button is visible on a row if routines exist
-    const rows = page.getByRole('row')
-    const rowCount = await rows.count()
-    if (rowCount > 1) { // header + at least one data row
-      await test.info().attach('has routines', { body: await page.screenshot(), contentType: 'image/png' })
-    }
+    const row = routinesPage.row('E2E Run Routine')
+    await expect(row).toBeVisible()
+    await row.getByRole('button', { name: '▶ Run' }).click()
+
+    await expect(page.getByText('E2E Run Routine is running')).toBeVisible()
+    await expect(routinesPage.historyPanel).toBeVisible()
   })
 })

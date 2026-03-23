@@ -1,44 +1,45 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { usersApi, type User } from '../api/users'
+import type { User } from '../api/users'
 import { formatDate } from '../utils/date'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Button from 'primevue/button'
 import Tag from 'primevue/tag'
+import { useUsersQuery } from '../features/users/queries/useUsersQuery'
 
-const users = ref<User[]>([])
-const loading = ref(true)
-const error = ref<string | null>(null)
+const usersQuery = useUsersQuery()
 
 function copyEmail(email: string): void {
   void navigator.clipboard.writeText(email)
 }
-
-onMounted(async () => {
-  try {
-    users.value = await usersApi.list()
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : 'Failed to load users'
-  } finally {
-    loading.value = false
-  }
-})
 </script>
 
 <template>
   <div class="p-6 max-w-4xl">
     <h1 class="text-xl font-semibold text-slate-800 mb-5">Users</h1>
 
-    <p v-if="loading" class="text-slate-500 text-sm flex items-center gap-2">
-      <span class="inline-block w-4 h-4 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin"></span>
+    <p
+      v-if="usersQuery.isPending.value"
+      class="text-slate-500 text-sm flex items-center gap-2"
+    >
+      <span
+        class="inline-block w-4 h-4 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin"
+      ></span>
       Loading…
     </p>
 
-    <p v-else-if="error" class="text-red-400 text-sm">{{ error }}</p>
+    <p
+      v-else-if="usersQuery.error.value instanceof Error"
+      class="text-red-400 text-sm"
+    >
+      {{ usersQuery.error.value.message }}
+    </p>
 
-    <div v-else class="bg-white border border-slate-200 rounded-lg overflow-hidden">
-      <DataTable :value="users" :rows="20" stripedRows>
+    <div
+      v-else
+      class="bg-white border border-slate-200 rounded-lg overflow-hidden"
+    >
+      <DataTable :value="usersQuery.data.value ?? []" :rows="20" striped-rows>
         <Column header="Name">
           <template #body="{ data }: { data: User }">
             <div class="flex items-center gap-2.5">
@@ -87,7 +88,9 @@ onMounted(async () => {
         </Column>
 
         <template #empty>
-          <p class="text-center text-slate-400 italic py-4 text-sm">No users have logged in yet.</p>
+          <p class="text-center text-slate-400 italic py-4 text-sm">
+            No users have logged in yet.
+          </p>
         </template>
       </DataTable>
     </div>

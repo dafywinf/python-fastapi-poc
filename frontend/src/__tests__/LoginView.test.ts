@@ -1,8 +1,15 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
+import * as allure from 'allure-js-commons'
+import { applyFrontendAllureLabels } from '../test/allure'
 import LoginView from '../views/LoginView.vue'
 
 describe('LoginView', () => {
+  beforeEach(() => {
+    applyFrontendAllureLabels('Vitest', 'base')
+    allure.feature('Login View')
+  })
+
   it('renders a sign-in button', () => {
     const wrapper = mount(LoginView, {
       global: { stubs: { RouterLink: true } },

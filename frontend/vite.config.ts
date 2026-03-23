@@ -1,9 +1,15 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import { fileURLToPath, URL } from 'node:url'
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [vue()],
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+    },
+  },
   server: {
     port: 5173,
     proxy: {
@@ -16,7 +22,10 @@ export default defineConfig({
           // Vue Router handles it.  All other /auth/* paths (e.g.
           // /auth/google/login, /auth/google/callback, /auth/token) must reach
           // the FastAPI backend, so return null for those.
-          if (req.url?.startsWith('/auth/callback') && req.headers.accept?.includes('text/html')) {
+          if (
+            req.url?.startsWith('/auth/callback') &&
+            req.headers.accept?.includes('text/html')
+          ) {
             return '/index.html'
           }
           return null

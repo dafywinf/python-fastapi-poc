@@ -1,0 +1,62 @@
+{
+  "name": "python-fastapi-poc",
+  "build": { "dockerfile": "Dockerfile" },
+  "init": true,
+  "remoteUser": "dev",
+  "updateRemoteUserUID": true,
+  "workspaceFolder": "${localWorkspaceFolder}",
+  "workspaceMount": "source=${localWorkspaceFolder},target=${localWorkspaceFolder},type=bind",
+  "mounts": [
+    "source=${localEnv:HOME}/.config/gh,target=/tmp/gh-config,type=bind",
+    "source=${localEnv:HOME}/.gitconfig,target=/tmp/home/.gitconfig,type=bind,readonly",
+    "source=${localEnv:HOME}/.claude,target=/tmp/home/.claude,type=bind",
+    "source=${localEnv:HOME}/.claude,target=${localEnv:HOME}/.claude,type=bind",
+    "source=${localEnv:HOME}/.claude.json,target=/tmp/home/.claude.json,type=bind",
+    "source=/run/host-services/ssh-auth.sock,target=/run/host-services/ssh-auth.sock,type=bind",
+    "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind",
+    "source=python-fastapi-poc-history,target=/commandhistory,type=volume",
+    "source=codex-config-${devcontainerId},target=/tmp/home/.codex,type=volume"
+  ],
+  "remoteEnv": {
+    "SSH_AUTH_SOCK": "/run/host-services/ssh-auth.sock",
+    "GIT_SSH_COMMAND": "ssh -o UserKnownHostsFile=/etc/ssh/ssh_known_hosts",
+    "COLORTERM": "${localEnv:COLORTERM}",
+    "BRAINSTORM_PORT": "${localEnv:BRAINSTORM_PORT:19452}",
+    "BRAINSTORM_HOST": "0.0.0.0",
+    "BRAINSTORM_URL_HOST": "localhost"
+  },
+  "containerEnv": {
+    "DEVCONTAINER_WORKSPACE": "${localWorkspaceFolder}",
+    "NODE_OPTIONS": "--max-old-space-size=4096",
+    "CODEX_HOME": "/tmp/home/.codex",
+    "POWERLEVEL9K_DISABLE_GITSTATUS": "true"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "anthropic.claude-code",
+        "openai.chatgpt",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "eamodio.gitlens"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.codeActionsOnSave": {
+          "source.fixAll.eslint": "explicit"
+        },
+        "terminal.integrated.defaultProfile.linux": "zsh"
+      }
+    }
+  },
+  "runArgs": ["--group-add=0", "--cap-add=NET_ADMIN", "--cap-add=NET_RAW"],
+  "postCreateCommand": "poetry config virtualenvs.in-project true && poetry install",
+  "forwardPorts": [19452],
+  "portsAttributes": {
+    "19452": {
+      "label": "Brainstorm Companion",
+      "onAutoForward": "silent"
+    }
+  }
+}

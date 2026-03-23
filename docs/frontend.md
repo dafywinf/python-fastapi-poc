@@ -2,277 +2,265 @@
 
 ## Overview
 
-The `frontend/` directory contains a single-page application (SPA) built with
-**Vite 8**, **Vue 3**, and **TypeScript**. It communicates exclusively with the
-FastAPI backend running on port 8000. PrimeVue is registered in **unstyled mode**
-so that all visual styling is owned by the application via **Tailwind CSS v4**.
+The `frontend/` directory contains the Vue 3 SPA for the home automation
+application. It is built with Vite and TypeScript, uses PrimeVue in unstyled
+mode, Tailwind CSS for visual styling, Pinia for auth/session state, and
+TanStack Vue Query for server-state fetching and mutation invalidation.
 
-Two test layers cover the frontend: **Vitest** (unit/component, jsdom, mocked API)
-and **Playwright** (browser E2E, real Chromium, real backend). They are deliberately
-kept separate — Vitest proves component logic in isolation; Playwright proves the
-full frontend ↔ backend integration through an actual browser.
+The frontend is now routines-focused. The older CRUD scaffolding has been
+removed from the live app.
 
----
+Two main test layers cover the UI:
+
+- Vitest for component, API-client, and accessibility checks in `jsdom`
+- Playwright for a small set of real-browser smoke flows
+
+For the full cross-repo test strategy, see [docs/testing.md](./testing.md).
 
 ## Tech Stack
 
 | Concern | Library | Notes |
 |---------|---------|-------|
-| Bundler | `vite ^8` | ESM-native, dev-server proxy built in |
-| Framework | `vue ^3.5` | Composition API + `<script setup>` |
-| Language | TypeScript `~5.9` | Strict mode via `vue-tsc` |
-| Component library | `primevue ^4.5` | Unstyled mode — no theme CSS injected |
-| Styling | `tailwindcss ^4` | PostCSS via `@tailwindcss/postcss` |
-| Routing | `vue-router ^4.6` | HTML5 history mode |
-| State | `pinia ^3` | Lightweight store (ready for Phase 2 auth) |
-| Unit testing | `vitest ^4` | JSDOM environment, Allure reporter |
-| Test utilities | `@vue/test-utils ^2.4` | Component mount helpers |
-| Coverage | `@vitest/coverage-v8` | V8 native coverage |
-| E2E testing | `@playwright/test ^1.52` | Chromium browser, Page Object Model |
-| E2E reporting | `allure-playwright ^3.6` | Allure results to `allure-results-e2e/` |
+| Bundler | `vite` | Dev server, build, proxying |
+| Framework | `vue` | Composition API + `<script setup>` |
+| Language | `typescript` | Strict frontend types |
+| UI primitives | `primevue` | Unstyled mode plus PT config |
+| Styling | `tailwindcss` | App-owned styling layer |
+| Routing | `vue-router` | HTML5 history, lazy-loaded route views |
+| App state | `pinia` | Auth/session state |
+| Server state | `@tanstack/vue-query` | Queries, mutations, invalidation |
+| Unit/component tests | `vitest` + `@vue/test-utils` | `jsdom` environment |
+| API mocking | `msw` | Shared contract-aware request handlers |
+| Contract generation | `openapi-typescript` | Generated schema types from backend OpenAPI |
+| Browser E2E | `@playwright/test` | Light smoke coverage |
+| A11y checks | `vitest-axe`, `@axe-core/playwright` | Automated accessibility checks |
+| Formatting/linting | `eslint`, `prettier`, `stylelint` | Current frontend quality gates |
 
----
+## Key Decisions
 
-## Key Architectural Decisions
+### PrimeVue in unstyled mode
 
-### PrimeVue unstyled mode
+PrimeVue is initialised with `unstyled: true`, and visual styling is supplied by
+the application via Tailwind utility classes and PrimeVue PT configuration in
+`src/primevue-pt.ts`. The point is consistency of primitives without giving up
+control of the final look.
 
-PrimeVue is initialised with `{ unstyled: true }`, which disables the library's
-built-in CSS. This gives full control over the visual output via Tailwind utility
-classes and scoped `<style>` blocks, avoiding the specificity conflicts that arise
-when mixing a pre-styled component library with a utility-first CSS framework.
+### Shared API client
 
-### Vite dev-server proxy → port 8000
+The frontend uses `src/api/client.ts` as the single transport layer. It owns:
 
-All API calls use relative paths (e.g. `/sequences/`). In development, Vite's
-`server.proxy` forwards matching requests to `http://localhost:8000`, avoiding
-CORS. In production the same relative paths are served from the same origin as
-the SPA (or handled by a reverse proxy). No `VITE_API_URL` env var is needed.
+- JSON parsing
+- bearer-token injection
+- form-body handling
+- consistent error extraction
+- `204 No Content` handling
 
-The proxy rules use a `bypass` function for routes where both browser navigation
-and API `fetch` calls are expected (e.g. `/sequences`, `/users`): navigation requests
-(Accept: `text/html`) are served `index.html` so Vue Router handles the route
-client-side, while `fetch` calls (Accept: `application/json`) are forwarded to the
-backend. Without this, navigating directly to `/sequences` in a browser — or in a
-Playwright test — would return JSON instead of the SPA shell.
+Feature API modules such as `src/api/routines.ts`, `src/api/users.ts`, and
+`src/api/auth.ts` are thin wrappers on top of that shared client.
 
-The `/auth` proxy is configured **without** a bypass. Google's OAuth2 redirect
-lands on `/auth/google/callback` as a browser navigation, but it **must** reach
-the FastAPI backend — not the SPA shell. Adding a bypass to `/auth` would serve
-`index.html` for that redirect and break the OAuth flow entirely.
+### Pinia for auth, Vue Query for backend data
 
-### Fetch-based API client (no Axios)
+Auth state lives in `src/stores/auth.ts`. That includes token hydration,
+authentication status, and current-user derivation.
 
-`src/api/sequences.ts` wraps `fetch` in a thin typed helper. This avoids an
-extra dependency while remaining straightforward to test — tests stub
-`globalThis.fetch` with `vi.stubGlobal` and restore it with `vi.unstubAllGlobals`.
+Fetched backend data does not live in Pinia. Routines, users, and execution
+history use Vue Query so views can stay thin and mutations can invalidate data
+cleanly instead of manually synchronising arrays.
 
-### Native `<dialog>` for modals
+### Feature composables instead of fat route views
 
-Create / Edit / Delete modals use the native HTML `<dialog>` element with
-`showModal()` / `close()`. This provides built-in focus-trapping, `::backdrop`
-styling, and accessibility semantics without a modal library.
+The route views are now mostly orchestration and presentation. Query/mutation
+logic lives in feature composables such as:
 
-### Auth state: `useAuth` composable
+- `src/features/routines/useRoutinesPage.ts`
+- `src/features/routines/useRoutineDetailPage.ts`
+- `src/features/routines/useExecutionHistoryPage.ts`
+- `src/features/users/queries/useUsersQuery.ts`
 
-Authentication state is managed by `frontend/src/composables/useAuth.ts` — a single source
-of truth backed by a Vue `ref<string | null>` initialised from `localStorage.getItem('access_token')`.
+This makes the view components easier to read and keeps server-state behavior in
+one place.
 
-Using a `ref` (rather than reading localStorage directly inside a computed) means that
-`setToken()` and `logout()` trigger reactive UI updates immediately in the same tick without
-needing a component re-mount.
+### OpenAPI-backed contract tests
 
-The composable exposes:
-- `isAuthenticated` — `ComputedRef<boolean>`: true if token exists and `exp` claim is in the future
-- `user` — `ComputedRef<{ email, name } | null>`: decoded from the JWT payload
-- `setToken(t)` — called by `AuthCallbackView` after the OAuth redirect
-- `login()` / `logout()` — navigate to `/login` or clear state and go home
+The frontend exports the backend OpenAPI schema and generates local TypeScript
+types:
 
-JWT payloads use base64url encoding; `decodePayload` normalises to standard base64 before
-calling `atob()` so it works correctly with real JWTs from the backend.
+- `src/api/generated/openapi.json`
+- `src/api/generated/schema.d.ts`
 
----
+Vitest tests use MSW handlers shaped from that contract, which is the main way
+the UI is tested without needing a live backend for every scenario.
+
+### Auth-aware route guards
+
+The router uses route metadata plus a global `beforeEach` guard:
+
+- `/login` is public-only
+- `/users` requires authentication
+- `/routines`, `/routines/:id`, and `/history` are readable without auth
+
+Write actions are then hidden in the UI when unauthenticated.
 
 ## Directory Structure
 
-```
+```text
 frontend/
-├── public/                  # Static assets (favicon, icons)
 ├── src/
-│   ├── __tests__/           # Vitest unit + component tests (jsdom, mocked API)
-│   │   ├── api.sequences.test.ts
-│   │   ├── types.sequence.test.ts
-│   │   ├── SequenceListView.test.ts
-│   │   └── SequenceDetailView.test.ts
+│   ├── __tests__/                # Vitest tests
 │   ├── api/
-│   │   ├── sequences.ts     # Typed fetch wrapper for /sequences endpoints
-│   │   └── users.ts         # Typed fetch wrapper for /users endpoints
-│   ├── composables/
-│   │   └── useAuth.ts       # Auth state — token, isAuthenticated, user, login/logout
+│   │   ├── auth.ts
+│   │   ├── client.ts
+│   │   ├── routines.ts
+│   │   ├── users.ts
+│   │   └── generated/            # exported OpenAPI + generated TS schema
 │   ├── components/
-│   │   └── layout/
-│   │       ├── AppNavbar.vue    # Top navigation bar (shows user email + logout when authenticated)
-│   │       └── AppSidebar.vue   # Left sidebar (hidden on mobile)
+│   │   └── layout/               # App shell components
+│   ├── composables/
+│   │   ├── useAuth.ts            # compatibility wrapper around auth store
+│   │   └── usePolling.ts
+│   ├── features/
+│   │   ├── routines/
+│   │   │   ├── components/
+│   │   │   ├── mutations/
+│   │   │   ├── queries/
+│   │   │   └── use*Page.ts
+│   │   └── users/
+│   │       └── queries/
 │   ├── router/
-│   │   └── index.ts         # Vue Router — HTML5 history
+│   │   └── index.ts
+│   ├── stores/
+│   │   └── auth.ts
+│   ├── test/
+│   │   ├── msw/
+│   │   ├── setup.ts
+│   │   └── utils/
 │   ├── types/
-│   │   └── sequence.ts      # Sequence, SequenceCreate, SequenceUpdate DTOs
+│   │   └── routine.ts            # facade over generated contract types
 │   ├── views/
-│   │   ├── SequenceListView.vue   # Sortable table + Create/Edit/Delete dialogs (write actions auth-gated)
-│   │   ├── SequenceDetailView.vue # Read-only detail + Edit/Delete actions
-│   │   ├── LoginView.vue          # "Sign in with Google" — window.location.href to /auth/google/login
-│   │   ├── AuthCallbackView.vue   # Reads ?token= from URL, calls setToken(), navigates to /
-│   │   └── UsersView.vue          # Lists all registered users (public)
-│   ├── App.vue              # Root component — Navbar + Sidebar + <RouterView>
-│   ├── main.ts              # App bootstrap — Vue, Pinia, Router, PrimeVue
-│   └── style.css            # Global CSS — Tailwind base/components/utilities
-├── e2e/                     # Playwright browser E2E tests (real Chromium + real backend)
+│   │   ├── AuthCallbackView.vue
+│   │   ├── ExecutionHistoryView.vue
+│   │   ├── LoginView.vue
+│   │   ├── RoutineDetailView.vue
+│   │   ├── RoutinesView.vue
+│   │   └── UsersView.vue
+│   ├── App.vue
+│   ├── main.ts
+│   ├── primevue-pt.ts
+│   └── style.css
+├── e2e/
+│   ├── accessibility.spec.ts
+│   ├── auth.spec.ts
+│   ├── routines.spec.ts
 │   ├── helpers/
-│   │   └── api.ts           # injectAuthToken, createSequence, deleteSequence, listSequences
-│   ├── pages/
-│   │   ├── SequenceListPage.ts  # Page Object — list view locators & helpers
-│   │   ├── SequenceDetailPage.ts# Page Object — detail view locators
-│   │   └── dialogs.ts           # FormDialog + DeleteDialog helpers
-│   ├── auth.spec.ts             # Google OAuth login flow + auth-gated UI assertions
-│   ├── sequences.list.spec.ts   # Heading, empty state, row render, name-link nav
-│   ├── sequences.crud.spec.ts   # Create, create-cancel, edit, delete via dialogs
-│   └── sequences.detail.spec.ts # Navigate, back link, edit, delete + redirect
-├── playwright.config.ts     # Playwright — Chromium, allure reporter, webServer
-├── vitest.config.ts         # Vitest — jsdom, allure reporter, v8 coverage
-├── vite.config.ts           # Vite — proxy (/sequences bypass; /auth no bypass; /users bypass; /health)
-├── postcss.config.js        # PostCSS — @tailwindcss/postcss + autoprefixer
-├── tsconfig.json            # TypeScript project references root
-├── tsconfig.app.json        # App source tsconfig (strict)
-├── tsconfig.node.json       # Vite / config files tsconfig
-└── tsconfig.e2e.json        # E2E test tsconfig (DOM lib, no emit)
+│   └── pages/
+├── .prettierrc.json
+├── .stylelintrc.json
+├── eslint.config.js
+├── package.json
+├── playwright.config.ts
+├── vite.config.ts
+└── vitest.config.ts
 ```
-
----
 
 ## Routes
 
-| Path | Component | Description |
-|------|-----------|-------------|
-| `/` | — | Redirects to `/sequences` |
-| `/sequences` | `SequenceListView` | Sortable table of all sequences with CRUD dialogs |
-| `/sequences/:id` | `SequenceDetailView` | Read-only detail view with Edit / Delete actions |
-| `/login` | `LoginView.vue` | "Sign in with Google" — sets `window.location.href` to `/auth/google/login` (top-level navigation, not fetch — required for the cross-origin redirect to Google) |
-| `/auth/callback` | `AuthCallbackView.vue` | Reads `?token=` from URL, calls `setToken()`, navigates to `/` |
-| `/users` | `UsersView.vue` | Lists all users who have logged in (public — no auth required) |
+| Path | Description | Auth |
+|------|-------------|------|
+| `/` | Redirects to `/routines` | — |
+| `/login` | Google sign-in entry point | Public-only |
+| `/auth/callback` | Stores returned token fragment and redirects | — |
+| `/routines` | Main routines list, active executions, recent history | Read-only public, write actions auth-gated |
+| `/routines/:id` | Routine detail and action editing | Read-only public, write actions auth-gated |
+| `/history` | Full execution history | Public |
+| `/users` | Registered users | Auth required |
 
----
+## API and Data Flow
 
-## API Client
+### Transport
 
-`src/api/sequences.ts` exports a `sequencesApi` object with five methods that
-map directly to the backend endpoints:
+UI events call feature composables, which call feature API modules, which call
+the shared API client.
 
-| Method | HTTP | Endpoint |
-|--------|------|----------|
-| `list()` | `GET` | `/sequences/` |
-| `get(id)` | `GET` | `/sequences/:id` |
-| `create(payload)` | `POST` | `/sequences/` |
-| `update(id, payload)` | `PATCH` | `/sequences/:id` |
-| `delete(id)` | `DELETE` | `/sequences/:id` |
+### Queries
 
-All methods throw an `Error` with the API `detail` string when the response is
-not OK, so callers can display it directly in the UI.
+Vue Query handles:
 
----
+- routines list
+- routine detail
+- active executions
+- execution history
+- users list
+
+### Mutations
+
+Routine and action mutations invalidate the appropriate query keys rather than
+manually editing local view state. This is the main architectural shift from the
+older page-local approach.
 
 ## Testing
 
-### Unit / Component Tests (Vitest)
+### Vitest
 
-Tests live in `src/__tests__/` and are run with **Vitest** in a **JSDOM**
-environment. The API is stubbed with `vi.stubGlobal('fetch', ...)` — no backend
-needed. Each test file follows the same Allure annotation pattern used in the
-Python backend:
+Vitest covers most frontend behavior:
 
-```ts
-import * as allure from 'allure-js-commons'
+- component rendering
+- auth-aware UI
+- API client behavior
+- query/mutation flows
+- a11y checks with `vitest-axe`
 
-describe('sequencesApi.list', () => {
-  beforeEach(() => allure.feature('Sequences API'))
+The shared test harness is:
 
-  it('returns an array of sequences on success', async () => {
-    allure.story('List')
-    // ...
-  })
-})
-```
+- `src/test/setup.ts`
+- `src/test/utils/render.ts`
+- `src/test/msw/server.ts`
+- `src/test/msw/handlers.ts`
 
-The **allure-vitest** reporter writes results to `frontend/allure-results/`,
-uploaded as the `allure-results-frontend` CI artifact.
+### Playwright
 
-```bash
-npm test                  # single run
-npm run test:coverage     # run with v8 coverage report
-```
+Playwright remains intentionally small. It is used for:
 
-### E2E Tests (Playwright)
+- auth smoke coverage
+- routines smoke coverage
+- browser-level accessibility smoke checks
 
-Browser-level tests live in `e2e/` and run against a real Chromium browser, the
-live Vite dev server, and the live FastAPI backend. Tests use the **Page Object
-Model** (`e2e/pages/`) and are fully independent — each creates and deletes its
-own data via the REST API.
+These tests run against the real frontend and backend.
+
+## Development Commands
+
+From `frontend/`:
 
 ```bash
-just frontend-e2e-install   # install Chromium once
-just frontend-e2e            # run (requires just dev-up)
-cd frontend && allure serve allure-results-e2e   # view report
+npm run dev
+npm run build
+npm run lint
+npm run format
+npm run stylelint
+npm test
+npm run e2e
+npm run api:generate-types
 ```
 
-Playwright E2E tests that require an authenticated state do **not** contact Google.
-`injectAuthToken(page)` from `e2e/helpers/api.ts` calls `POST /auth/token` (available
-when `ENABLE_PASSWORD_AUTH=true`) and injects the JWT into localStorage directly,
-simulating a completed OAuth login.
-
-For the full strategy — data patterns, Allure locations, CI job mapping, and how
-to add new tests — see [`docs/testing.md`](./testing.md).
-
----
-
-## Development Workflow
+From the repo root:
 
 ```bash
-# from project root — start the full stack
-just platform-up          # start postgres
-just dev-up               # start backend (:8000) + frontend (:5173) in background
-
-# from frontend/
-npm run dev               # Vite dev server on :5173, proxies /sequences → :8000
-npm run build             # type-check (vue-tsc) + production build → dist/
-npm test                  # Vitest unit tests (no backend needed)
-npm run e2e               # Playwright e2e tests (requires dev-up)
+just frontend-dev
+just frontend-check
+just frontend-test
+just frontend-e2e
 ```
 
----
+## Proxy and OAuth Notes
 
-## C4 Component Diagram
+The Vite dev server proxies API calls to the backend on port `8000`. The `/auth`
+proxy must continue to forward browser navigations to the backend so Google OAuth
+callbacks are handled server-side.
 
-```mermaid
-graph TD
-    user["👤 User<br/>Browser"]
-    playwright["🎭 Playwright<br/>Chromium — E2E tests<br/>e2e/*.spec.ts"]
+After successful login, the backend redirects to the SPA using a URL fragment:
 
-    subgraph spa["SPA (Vite / Vue 3) — :5173"]
-        router["Vue Router<br/>HTML5 history"]
-        listview["SequenceListView<br/>Sortable table<br/>Create / Edit / Delete dialogs"]
-        detailview["SequenceDetailView<br/>Read-only + Edit / Delete"]
-        apiclient["sequencesApi<br/>fetch wrapper"]
-        navbar["AppNavbar"]
-        sidebar["AppSidebar"]
-    end
-
-    backend["🐍 FastAPI<br/>localhost:8000<br/>REST API"]
-
-    user -->|"navigates"| router
-    router --> listview
-    router --> detailview
-    listview -->|"calls"| apiclient
-    detailview -->|"calls"| apiclient
-    apiclient -->|"HTTP via Vite proxy<br/>(bypass for navigation)"| backend
-    playwright -->|"drives browser<br/>full page navigation"| spa
-    playwright -->|"test setup/teardown<br/>direct REST calls"| backend
+```text
+/auth/callback#token=<jwt>
 ```
+
+That is deliberate: URL fragments are not sent to the server and do not appear
+in server access logs.

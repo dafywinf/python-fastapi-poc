@@ -1,0 +1,34 @@
+name: Devcontainer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.devcontainer/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.devcontainer/**'
+
+jobs:
+  validate:
+    name: Validate devcontainer.json schema
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check devcontainer.json against spec schema
+        run: |
+          pip install check-jsonschema
+          check-jsonschema \
+            --schemafile "https://raw.githubusercontent.com/devcontainers/spec/main/schemas/devContainer.schema.json" \
+            .devcontainer/devcontainer.json
+
+  build:
+    name: Build devcontainer image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build .devcontainer/

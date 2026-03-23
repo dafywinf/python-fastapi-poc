@@ -1,28 +1,43 @@
-import { mount, flushPromises } from '@vue/test-utils'
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { flushPromises } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import * as allure from 'allure-js-commons'
+import type { paths } from '../api/generated/schema'
+import { applyFrontendAllureLabels } from '../test/allure'
+import { usersHandlers } from '../test/msw/handlers'
+import { server } from '../test/msw/server'
+import { mountWithApp } from '../test/utils/render'
 import UsersView from '../views/UsersView.vue'
 
-vi.mock('vue-router', () => ({
-  useRouter: () => ({ push: vi.fn() }),
-}))
+type ListUsersResponse =
+  paths['/users/']['get']['responses']['200']['content']['application/json']
 
-const mockUsers = [
-  { id: 1, email: 'alice@example.com', name: 'Alice', picture: null, created_at: '2026-01-01T00:00:00Z' },
-  { id: 2, email: 'bob@example.com', name: 'Bob', picture: 'https://img.example.com/bob.jpg', created_at: '2026-01-02T00:00:00Z' },
+const mockUsers: ListUsersResponse = [
+  {
+    id: 1,
+    email: 'alice@example.com',
+    name: 'Alice',
+    picture: null,
+    created_at: '2026-01-01T00:00:00Z',
+  },
+  {
+    id: 2,
+    email: 'bob@example.com',
+    name: 'Bob',
+    picture: 'https://img.example.com/bob.jpg',
+    created_at: '2026-01-02T00:00:00Z',
+  },
 ]
 
 describe('UsersView', () => {
   beforeEach(() => {
+    applyFrontendAllureLabels('Vitest', 'base')
+    allure.feature('Users View')
     vi.resetAllMocks()
   })
 
   it('renders a list of users after loading', async () => {
-    vi.spyOn(global, 'fetch').mockResolvedValue({
-      ok: true,
-      json: async () => mockUsers,
-    } as Response)
-
-    const wrapper = mount(UsersView)
+    server.use(usersHandlers.list(mockUsers))
+    const wrapper = await mountWithApp(UsersView)
     await flushPromises()
 
     expect(wrapper.text()).toContain('Alice')
@@ -30,16 +45,16 @@ describe('UsersView', () => {
     expect(wrapper.text()).toContain('Bob')
   })
 
-  it('shows a loading state initially', () => {
-    vi.spyOn(global, 'fetch').mockImplementation(() => new Promise(() => {}))
-    const wrapper = mount(UsersView)
+  it('shows a loading state initially', async () => {
+    server.use(usersHandlers.pending())
+    const wrapper = await mountWithApp(UsersView)
     expect(wrapper.text()).toContain('Loading')
   })
 
   it('shows an error message when the fetch fails', async () => {
-    vi.spyOn(global, 'fetch').mockRejectedValue(new Error('Network error'))
-    const wrapper = mount(UsersView)
+    server.use(usersHandlers.error(500, 'Network error'))
+    const wrapper = await mountWithApp(UsersView)
     await flushPromises()
-    expect(wrapper.text()).toMatch(/error|failed/i)
+    expect(wrapper.text()).toContain('Network error')
   })
 })

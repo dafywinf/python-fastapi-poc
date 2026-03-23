@@ -2,6 +2,8 @@ venv        := ".venv/bin"
 backend_log := "/tmp/backend.log"
 frontend_log := "/tmp/frontend.log"
 
+BRAINSTORM_PORT := env("BRAINSTORM_PORT", "19452")
+
 # List all available commands
 help:
     @just --list
@@ -185,3 +187,69 @@ bootstrap: db-up
 # Full pre-PR gate: backend checks + all tests + frontend check + frontend tests + playwright e2e
 # Requires: just platform-up && just dev-up running in another terminal
 ci: backend-check frontend-check backend-test backend-perf backend-e2e frontend-test frontend-e2e
+
+# ── Dev Container ────────────────────────────────────────────────────────────
+
+# Launch an interactive devcontainer shell (e.g. `just dev-shell`, `just dev-shell claude`)
+# Add --firewall as the first argument for network-firewalled autonomous mode:
+#   just dev-shell --firewall claude
+[positional-arguments]
+dev-shell *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    docker build -t python-fastapi-poc-devcontainer .devcontainer/
+    tty_flag=$( [[ -t 0 ]] && echo "-it" || echo "-i" )
+    run_args=(
+        --rm $tty_flag --init
+        -v "$(pwd):$(pwd)" -w "$(pwd)"
+        -v "$SSH_AUTH_SOCK:/tmp/ssh-agent.sock"
+        -e SSH_AUTH_SOCK=/tmp/ssh-agent.sock
+        -e COLORTERM="${COLORTERM:-}"
+        -e DEVCONTAINER_WORKSPACE="$(pwd)"
+    )
+    # Firewalled mode: iptables egress filter + run as root then drop privileges via gosu
+    # Normal mode: run directly as host UID (no firewall, no caps)
+    if [[ "${1:-}" = "--firewall" ]]; then
+        shift
+        run_args+=(
+            --cap-add=NET_ADMIN --cap-add=NET_RAW
+            -e DEVCONTAINER_FIREWALL=1
+            -e DEVCONTAINER_UID="$(id -u)"
+            -e DEVCONTAINER_GID="$(id -g)"
+        )
+    else
+        run_args+=(--user "$(id -u):$(id -g)")
+    fi
+    # Conditional host config mounts (only add if the source exists)
+    [[ -f "$HOME/.gitconfig" ]] && run_args+=(-v "$HOME/.gitconfig:/tmp/home/.gitconfig:ro")
+    [[ -d "$HOME/.config/gh" ]] && run_args+=(-v "$HOME/.config/gh:/tmp/gh-config")
+    [[ -d "$HOME/.claude" ]] && run_args+=(
+        -v "$HOME/.claude:/tmp/home/.claude"
+        -v "$HOME/.claude:$HOME/.claude"
+    )
+    [[ -f "$HOME/.claude.json" ]] && run_args+=(-v "$HOME/.claude.json:/tmp/home/.claude.json")
+    # Docker socket — detect location (Linux: /var/run/docker.sock, macOS Docker Desktop: ~/.docker/run/docker.sock)
+    # On macOS, the socket appears as GID 0 (root) inside Linux containers regardless of host ownership.
+    # On Linux, read the actual socket GID from the host path.
+    docker_sock=""
+    [[ -S /var/run/docker.sock ]] && docker_sock=/var/run/docker.sock
+    [[ -z "$docker_sock" && -S "$HOME/.docker/run/docker.sock" ]] && docker_sock="$HOME/.docker/run/docker.sock"
+    if [[ -n "$docker_sock" ]]; then
+        run_args+=(-v "$docker_sock:/var/run/docker.sock")
+        if [[ "$(uname -s)" = "Darwin" ]]; then
+            sock_gid=0
+        else
+            sock_gid=$(stat -c '%g' "$docker_sock")
+        fi
+        run_args+=(--group-add "$sock_gid")
+    fi
+    # Superpowers brainstorming visual companion port
+    run_args+=(-p "{{ BRAINSTORM_PORT }}:{{ BRAINSTORM_PORT }}")
+    run_args+=(-e "BRAINSTORM_PORT={{ BRAINSTORM_PORT }}")
+    run_args+=(-e "BRAINSTORM_HOST=0.0.0.0")
+    run_args+=(-e "BRAINSTORM_URL_HOST=localhost")
+    if [[ $# -eq 0 ]]; then
+        exec docker run "${run_args[@]}" python-fastapi-poc-devcontainer bash
+    else
+        exec docker run "${run_args[@]}" python-fastapi-poc-devcontainer "$@"
+    fi

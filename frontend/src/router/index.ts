@@ -1,27 +1,66 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import LoginView from '../views/LoginView.vue'
-import AuthCallbackView from '../views/AuthCallbackView.vue'
-import UsersView from '../views/UsersView.vue'
-import RoutinesView from '../views/RoutinesView.vue'
-import RoutineDetailView from '../views/RoutineDetailView.vue'
-import ExecutionHistoryView from '../views/ExecutionHistoryView.vue'
+import { storeToRefs } from 'pinia'
+import { useAuthStore } from '../stores/auth'
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', redirect: '/routines' },
-    { path: '/login', name: 'login', component: LoginView },
-    { path: '/auth/callback', name: 'auth-callback', component: AuthCallbackView },
-    { path: '/users', name: 'users', component: UsersView },
-    { path: '/routines', name: 'routines', component: RoutinesView },
+    {
+      path: '/login',
+      name: 'login',
+      component: () => import('../views/LoginView.vue'),
+      meta: { publicOnly: true },
+    },
+    {
+      path: '/auth/callback',
+      name: 'auth-callback',
+      component: () => import('../views/AuthCallbackView.vue'),
+    },
+    {
+      path: '/users',
+      name: 'users',
+      component: () => import('../views/UsersView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/routines',
+      name: 'routines',
+      component: () => import('../views/RoutinesView.vue'),
+    },
     {
       path: '/routines/:id',
       name: 'routine-detail',
-      component: RoutineDetailView,
+      component: () => import('../views/RoutineDetailView.vue'),
       props: (route) => ({ id: Number(route.params.id) }),
+      beforeEnter: (to) => {
+        if (isNaN(Number(to.params.id))) {
+          console.warn('Invalid route: id is not a number:', to.params.id)
+          return { name: 'routines' }
+        }
+      },
     },
-    { path: '/history', name: 'history', component: ExecutionHistoryView },
+    {
+      path: '/history',
+      name: 'history',
+      component: () => import('../views/ExecutionHistoryView.vue'),
+    },
   ],
+})
+
+router.beforeEach((to) => {
+  const authStore = useAuthStore()
+  const { isAuthenticated } = storeToRefs(authStore)
+
+  if (to.meta.requiresAuth && !isAuthenticated.value) {
+    return { name: 'login', query: { redirect: to.fullPath } }
+  }
+
+  if (to.meta.publicOnly && isAuthenticated.value) {
+    return { name: 'routines' }
+  }
+
+  return true
 })
 
 export default router

@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import * as allure from 'allure-js-commons'
+import { createPinia, setActivePinia } from 'pinia'
+import { applyFrontendAllureLabels } from '../test/allure'
 
 // Mock vue-router before importing useAuth
 vi.mock('vue-router', () => ({
@@ -10,9 +13,15 @@ const localStorageMock = (() => {
   let store: Record<string, string> = {}
   return {
     getItem: (key: string) => store[key] ?? null,
-    setItem: (key: string, value: string) => { store[key] = value },
-    removeItem: (key: string) => { delete store[key] },
-    clear: () => { store = {} },
+    setItem: (key: string, value: string) => {
+      store[key] = value
+    },
+    removeItem: (key: string) => {
+      delete store[key]
+    },
+    clear: () => {
+      store = {}
+    },
   }
 })()
 Object.defineProperty(global, 'localStorage', { value: localStorageMock })
@@ -21,7 +30,13 @@ Object.defineProperty(global, 'localStorage', { value: localStorageMock })
 // Payload: { sub: "alice@example.com", name: "Alice", exp: 4070908800 }
 const VALID_TOKEN =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.' +
-  btoa(JSON.stringify({ sub: 'alice@example.com', name: 'Alice', exp: 4070908800 }))
+  btoa(
+    JSON.stringify({
+      sub: 'alice@example.com',
+      name: 'Alice',
+      exp: 4070908800,
+    }),
+  )
     .replace(/=/g, '')
     .replace(/\+/g, '-')
     .replace(/\//g, '_') +
@@ -38,8 +53,11 @@ const EXPIRED_TOKEN =
 
 describe('useAuth', () => {
   beforeEach(() => {
+    applyFrontendAllureLabels('Vitest', 'base')
+    allure.feature('useAuth')
     localStorageMock.clear()
     vi.resetModules()
+    setActivePinia(createPinia())
   })
 
   it('isAuthenticated is false when localStorage is empty', async () => {
@@ -58,6 +76,8 @@ describe('useAuth', () => {
   it('isAuthenticated is false for an expired JWT', async () => {
     localStorageMock.setItem('access_token', EXPIRED_TOKEN)
     const { useAuth } = await import('../composables/useAuth')
+    const { useAuthStore } = await import('../stores/auth')
+    useAuthStore().hydrate()
     const { isAuthenticated } = useAuth()
     expect(isAuthenticated.value).toBe(false)
   })
@@ -79,6 +99,8 @@ describe('useAuth', () => {
   it('logout clears token and localStorage', async () => {
     localStorageMock.setItem('access_token', VALID_TOKEN)
     const { useAuth } = await import('../composables/useAuth')
+    const { useAuthStore } = await import('../stores/auth')
+    useAuthStore().hydrate()
     const { isAuthenticated, logout } = useAuth()
     expect(isAuthenticated.value).toBe(true)
     logout()
@@ -96,6 +118,8 @@ describe('useAuth', () => {
   it('isAuthenticated is false and user is null when localStorage holds a malformed JWT', async () => {
     localStorageMock.setItem('access_token', 'not.a.jwt')
     const { useAuth } = await import('../composables/useAuth')
+    const { useAuthStore } = await import('../stores/auth')
+    useAuthStore().hydrate()
     const { isAuthenticated, user } = useAuth()
     expect(isAuthenticated.value).toBe(false)
     expect(user.value).toBeNull()

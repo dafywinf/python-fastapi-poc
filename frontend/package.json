@@ -6,7 +6,12 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
+    "api:export-schema": "poetry run python ../scripts/export_openapi.py src/api/generated/openapi.json",
+    "api:generate-types": "npm run api:export-schema && npx openapi-typescript src/api/generated/openapi.json -o src/api/generated/schema.d.ts",
     "lint": "eslint .",
+    "format": "prettier --check .",
+    "format:write": "prettier --write .",
+    "stylelint": "stylelint \"src/**/*.{css,vue}\"",
     "preview": "vite preview",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
@@ -14,6 +19,7 @@
   },
   "dependencies": {
     "@primevue/themes": "^4.5.4",
+    "@tanstack/vue-query": "^5.94.5",
     "pinia": "^3.0.4",
     "primeicons": "^7.0.0",
     "primevue": "^4.5.4",
@@ -21,6 +27,8 @@
     "vue-router": "^4.6.4"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.11.1",
+    "@playwright/test": "^1.53.0",
     "@tailwindcss/postcss": "^4.2.1",
     "@types/node": "^24.12.0",
     "@vitejs/plugin-vue": "^6.0.5",
@@ -28,17 +36,24 @@
     "@vue/eslint-config-typescript": "^14.7.0",
     "@vue/test-utils": "^2.4.6",
     "@vue/tsconfig": "^0.9.0",
-    "@playwright/test": "^1.53.0",
     "allure-playwright": "^3.6.0",
     "allure-vitest": "^3.6.0",
     "autoprefixer": "^10.4.27",
     "eslint": "^9.39.4",
+    "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-vue": "^10.8.0",
     "jsdom": "^28.1.0",
+    "msw": "^2.12.14",
+    "openapi-typescript": "^7.13.0",
+    "prettier": "^3.8.1",
+    "stylelint": "^17.5.0",
+    "stylelint-config-recommended-vue": "^1.6.1",
+    "stylelint-config-standard": "^40.0.0",
     "tailwindcss": "^4.2.1",
     "typescript": "~5.9.3",
     "vite": "^8.0.0",
     "vitest": "^4.1.0",
+    "vitest-axe": "^0.1.0",
     "vue-tsc": "^3.2.5"
   }
 }
