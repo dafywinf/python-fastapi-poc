@@ -17,6 +17,7 @@ htmlcov/
 # Allure (generated output — use `just test-report` / `just perf-report` locally)
 allure-results/
 allure-report/
+allure-report-*/
 
 # Alembic (keep versions, ignore nothing extra)
 
@@ -31,11 +32,16 @@ allure-report/
 # macOS
 .DS_Store
 
+# Claude Code local settings (machine-specific)
+.claude/settings.local.json
+
 # Frontend build/test artefacts
+.vite/
 frontend/node_modules/
 frontend/dist/
 frontend/allure-results/
 frontend/allure-results-e2e/
 frontend/allure-report/
+frontend/allure-report-*/
 frontend/test-results/
 .worktrees/

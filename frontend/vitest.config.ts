@@ -7,8 +7,11 @@ export default defineConfig({
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     environment: 'jsdom',
     globals: true,
-    reporters: ['default', ['allure-vitest/reporter', { resultsDir: './allure-results' }]],
-    setupFiles: ['allure-vitest/setup'],
+    reporters: [
+      'default',
+      ['allure-vitest/reporter', { resultsDir: './allure-results' }],
+    ],
+    setupFiles: ['allure-vitest/setup', './src/test/setup.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],

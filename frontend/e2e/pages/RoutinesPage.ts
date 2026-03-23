@@ -11,7 +11,9 @@ export class RoutinesPage {
     this.page = page
     this.heading = page.getByRole('heading', { name: 'Routines' })
     this.newButton = page.getByRole('button', { name: '+ New Routine' })
-    this.executingPanel = page.getByRole('heading', { name: 'Currently Executing' })
+    this.executingPanel = page.getByRole('heading', {
+      name: 'Currently Executing',
+    })
     this.historyPanel = page.getByRole('heading', { name: 'Recent History' })
   }
 

@@ -1,12 +1,12 @@
 """SQLAlchemy ORM models — source of truth for the database schema."""
 
 from datetime import datetime
-from typing import Any
 
 from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.database import Base
+from backend.domain_types import JSONObject
 
 
 class User(Base):
@@ -35,11 +35,13 @@ class Routine(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(String, nullable=True)
     schedule_type: Mapped[str] = mapped_column(String, nullable=False)
-    schedule_config: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    schedule_config: Mapped[JSONObject | None] = mapped_column(JSON, nullable=True)
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="true"
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
     actions: Mapped[list["Action"]] = relationship(
         "Action",
         back_populates="routine",
@@ -64,7 +66,7 @@ class Action(Base):
     )
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     action_type: Mapped[str] = mapped_column(String, nullable=False)
-    config: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    config: Mapped[JSONObject] = mapped_column(JSON, nullable=False)
     routine: Mapped["Routine"] = relationship("Routine", back_populates="actions")
 
 
@@ -79,6 +81,10 @@ class RoutineExecution(Base):
     )
     status: Mapped[str] = mapped_column(String, nullable=False)
     triggered_by: Mapped[str] = mapped_column(String, nullable=False)
-    started_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     routine: Mapped["Routine"] = relationship("Routine", back_populates="executions")

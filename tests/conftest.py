@@ -10,6 +10,7 @@ import os
 import pathlib
 from collections.abc import Generator
 
+import allure
 import fakeredis
 import pytest
 from fastapi.testclient import TestClient
@@ -34,6 +35,29 @@ if _docker_sock.exists() and not os.environ.get("DOCKER_HOST"):
     os.environ["DOCKER_HOST"] = f"unix://{_docker_sock}"
 
 POSTGRES_IMAGE = "postgres:16-alpine"
+
+
+def _allure_layer_for_path(path: pathlib.Path) -> tuple[str, str]:
+    """Return the test-pyramid layer and suite name for a test file path."""
+    path_str = path.as_posix()
+    if "tests/perf/" in path_str:
+        return ("middle", "Performance")
+    if "tests/e2e/" in path_str:
+        return ("top", "Live Stack E2E")
+    return ("base", "API Integration")
+
+
+@pytest.fixture(autouse=True)
+def _apply_allure_pyramid_labels(  # pyright: ignore[reportUnusedFunction]
+    request: pytest.FixtureRequest,
+) -> Generator[None, None, None]:
+    """Apply consistent Allure labels so reports reflect the test pyramid."""
+    path = request.path
+    layer_name, suite_name = _allure_layer_for_path(path)
+    allure.dynamic.parent_suite("Backend")  # pyright: ignore[reportUnknownMemberType]
+    allure.dynamic.suite(suite_name)  # pyright: ignore[reportUnknownMemberType]
+    allure.dynamic.label("layer", layer_name)  # pyright: ignore[reportUnknownMemberType]
+    yield
 
 
 @pytest.fixture(scope="session")

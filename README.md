@@ -1,12 +1,13 @@
 # python-fastapi-poc
 
-A full-stack sequence management application — synchronous FastAPI backend with SQLAlchemy + PostgreSQL + Alembic, a Vue 3 + TypeScript SPA frontend, and a full Prometheus + Loki + Grafana observability stack.
-
----
+A full-stack home automation routines application built as a reference project.
+It combines a synchronous FastAPI backend, PostgreSQL, APScheduler-backed routine
+execution, Google OAuth2 login, a Vue 3 SPA with PrimeVue + Tailwind, and a
+layered testing setup spanning pytest, Vitest, and Playwright.
 
 ## Quick Start
 
-### 1. Install system dependencies (macOS)
+### 1. Install local dependencies
 
 ```bash
 brew install pyenv poetry just node
@@ -14,312 +15,256 @@ brew install pyenv poetry just node
 
 Docker Desktop must also be installed and running.
 
-### 2. Install the correct Python version
+### 2. Install Python and backend dependencies
 
 ```bash
 pyenv install $(cat .python-version)
-```
-
-### 3. Configure Poetry to create the virtualenv inside the project
-
-```bash
 poetry config virtualenvs.in-project true
-```
-
-### 4. Install backend dependencies
-
-```bash
 poetry install
 ```
 
-### 5. Install frontend dependencies
+### 3. Install frontend dependencies
 
 ```bash
 cd frontend && npm ci && cd ..
 ```
 
-### 6. Configure environment variables
-
-Copy the example file and fill in your credentials:
+### 4. Configure environment variables
 
 ```bash
 cp .env.example .env
 ```
 
-A minimal `.env` for local development (sequences CRUD only, no Google login):
+Minimal local `.env`:
 
 ```env
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/sequences_db
 JWT_SECRET_KEY=change-me-to-a-long-random-secret
-ADMIN_PASSWORD_HASH=$2b$12$...  # generate: python -c "import bcrypt; print(bcrypt.hashpw(b'your-pass', bcrypt.gensalt()).decode())"
-ENABLE_PASSWORD_AUTH=true       # enables POST /auth/token; set false in production
+ADMIN_PASSWORD_HASH=$2b$12$...
+ENABLE_PASSWORD_AUTH=true
 FRONTEND_URL=http://localhost:5173
 BACKEND_URL=http://localhost:8000
+REDIS_URL=redis://localhost:6379/0
 ```
 
-To enable **Google OAuth2 login**, add your Google Cloud credentials:
+To enable Google OAuth2 login, also set:
 
 ```env
 GOOGLE_CLIENT_ID=<your-client-id>.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=<your-client-secret>
 ```
 
-See [docs/google-oauth-setup.md](docs/google-oauth-setup.md) for the full Google Cloud Console walkthrough.
+See [docs/google-oauth-setup.md](docs/google-oauth-setup.md) for the full setup.
 
-To enable Loki log shipping, add `LOKI_URL` **after** starting the monitoring stack:
+To enable Loki log shipping, set:
 
 ```env
 LOKI_URL=http://localhost:3100
 ```
 
-Leave `LOKI_URL` unset (the default) to disable log shipping — the app and all tests start cleanly without it.
-
-### 7. Start all platform services and run migrations
+### 5. Start platform services and run migrations
 
 ```bash
 just platform-up
 just bootstrap
 ```
 
-`platform-up` starts PostgreSQL, Prometheus, Loki, and Grafana. `bootstrap` waits for the database to be healthy then applies all Alembic migrations.
+`platform-up` starts PostgreSQL, Redis, Prometheus, Loki, and Grafana.
+`bootstrap` waits for PostgreSQL and applies Alembic migrations.
 
-### 8. Start the full development stack
+### 6. Start the app
 
 ```bash
 just dev-up
 ```
 
-This starts the backend (port 8000) and frontend (port 5173) in the background and confirms both are healthy. Logs are written to `/tmp/backend.log` and `/tmp/frontend.log`.
+Useful follow-up commands:
 
 ```bash
-just dev-logs   # tail both logs (Ctrl-C to stop)
-just dev-down   # stop backend + frontend
+just dev-logs
+just dev-down
 ```
+
+## Local URLs
 
 | URL | Description |
 |-----|-------------|
-| <http://localhost:5173> | **Vue 3 SPA — main UI** |
-| <http://localhost:8000/docs> | Interactive Swagger UI |
-| <http://localhost:8000/redoc> | ReDoc documentation |
-| <http://localhost:8000/health> | Liveness check |
+| <http://localhost:5173> | Vue frontend |
+| <http://localhost:8000/docs> | Swagger UI |
+| <http://localhost:8000/redoc> | ReDoc |
+| <http://localhost:8000/health> | Health check |
 | <http://localhost:8000/metrics> | Prometheus metrics |
 | <http://localhost:9090> | Prometheus |
-| <http://localhost:3100/ready> | Loki readiness check |
-| <http://localhost:3000> | Grafana (admin / admin) |
-
----
+| <http://localhost:3100/ready> | Loki readiness |
+| <http://localhost:3000> | Grafana (`admin` / `admin`) |
 
 ## Running Tests
 
 ```bash
-# Backend integration tests (real PostgreSQL via testcontainers)
 just backend-test
-
-# Backend tests with coverage report
 just backend-test-cov
-
-# Performance tests (event-loop blocking demo, ~20s, requires Docker)
 just backend-perf
-
-# Frontend Vitest unit + component tests (jsdom, mocked API — no backend needed)
 just frontend-test
-
-# Frontend Playwright E2E tests (real Chromium + real backend — requires just dev-up)
 just frontend-e2e
-
-# TypeScript type-check + build (frontend)
 just frontend-check
-
-# Full pre-PR gate — all of the above
 just ci
 ```
 
-### Allure Reports
+Test reporting:
 
 ```bash
-# Run everything then open a single combined report (requires platform-up + dev-up)
+just backend-test-report
+just frontend-test-report
+just frontend-e2e-report
 just report
-
-# Per-suite reports (uses results already on disk from the last run)
-just backend-test-report    # backend integration + perf + obs E2E
-just frontend-test-report   # Vitest unit/component
-just frontend-e2e-report    # Playwright browser E2E
-
-# Clear all results directories without running tests
 just clean-reports
 ```
 
----
-
-## All Commands
+## Common Commands
 
 | Command | Description |
 |---------|-------------|
-| `just dev-up` | Start backend + frontend in background; confirms both healthy |
+| `just dev-up` | Start backend + frontend in background |
 | `just dev-down` | Stop backend + frontend |
-| `just dev-logs` | Tail `/tmp/backend.log` and `/tmp/frontend.log` |
-| `just backend-dev` | Start the FastAPI backend only (foreground) |
-| `just backend-dev-stop` | Stop the FastAPI backend |
-| `just backend-check` | Ruff lint + basedpyright type-check |
-| `just backend-test` | Run the backend integration test suite |
-| `just backend-test-cov` | Run backend tests with a terminal coverage report |
-| `just backend-perf` | Run performance tests (event-loop blocking demo, requires Docker) |
-| `just frontend-dev` | Start the Vite frontend dev server (port 5173) |
-| `just frontend-dev-stop` | Stop the Vite dev server |
-| `just frontend-check` | TypeScript type-check + production build |
-| `just frontend-test` | Run frontend Vitest unit/component tests with Allure results |
-| `just frontend-e2e-install` | Install Playwright Chromium browser binary (run once) |
-| `just frontend-e2e` | Run Playwright browser E2E tests (requires `just dev-up`) |
-| `just backend-test-report` | Run backend tests and open Allure report |
-| `just frontend-test-report` | Run Vitest tests and open Allure report |
-| `just frontend-e2e-report` | Run Playwright tests and open Allure report (requires `just dev-up`) |
-| `just report` | Clean results, run all tests, open combined Allure report (requires platform-up + dev-up) |
-| `just clean-reports` | Delete all Allure results directories |
-| `just platform-up` | Start all platform services (DB + monitoring stack) |
-| `just platform-down` | Stop all platform services |
-| `just obs-up` | Start Prometheus, Loki, and Grafana only |
-| `just obs-down` | Stop Prometheus, Loki, and Grafana |
-| `just obs-logs` | Tail all monitoring container logs |
-| `just loki-logs` | Tail Loki container logs only |
-| `just bootstrap` | Start the DB container and apply all migrations |
-| `just migrate` | Apply pending Alembic migrations |
-| `just makemigrations "message"` | Generate a new migration from model changes |
-| `just db-up` | Start the PostgreSQL container |
-| `just db-down` | Stop and remove all containers |
-| `just db-logs` | Tail PostgreSQL container logs |
-| `just ci` | Full pre-PR gate: all checks + all tests (requires platform-up + backend-dev) |
+| `just dev-logs` | Tail app logs |
+| `just backend-dev` | Run FastAPI with reload |
+| `just backend-check` | Ruff + format check + basedpyright |
+| `just backend-test` | Run backend integration tests |
+| `just backend-perf` | Run backend performance tests |
+| `just backend-e2e` | Run observability E2E tests |
+| `just frontend-dev` | Run Vite dev server |
+| `just frontend-lint` | Run frontend ESLint |
+| `just frontend-check` | Run frontend lint + build |
+| `just frontend-test` | Run frontend Vitest suite |
+| `just frontend-e2e` | Run frontend Playwright suite |
+| `just platform-up` | Start PostgreSQL, Redis, and monitoring |
+| `just platform-down` | Stop platform services |
+| `just bootstrap` | Start DB and apply migrations |
+| `just ci` | Full pre-PR gate |
 
----
+## API Surface
 
-## API Endpoints
+### Core
 
-| Method | Path | Auth | Status | Description |
-|--------|------|------|--------|-------------|
-| `GET` | `/health` | — | `200` | Liveness check |
-| `GET` | `/metrics` | — | `200` | Prometheus metrics |
-| `POST` | `/auth/token` | — | `200` / `401` | Obtain a JWT via password grant (requires `ENABLE_PASSWORD_AUTH=true`) |
-| `GET` | `/auth/google/login` | — | `302` | Begin Google OAuth2 flow (redirects to Google) |
-| `GET` | `/auth/google/callback` | — | `302` | Google OAuth2 callback — exchanges code, upserts user, returns JWT |
-| `GET` | `/users/` | — | `200` | List all registered users (public) |
-| `GET` | `/users/me` | Bearer | `200` / `401` / `404` | Retrieve the authenticated user's profile |
-| `POST` | `/sequences/` | Bearer | `201` / `401` | Create a new Sequence |
-| `GET` | `/sequences/` | — | `200` | List all Sequences (public) |
-| `GET` | `/sequences/{id}` | — | `200` / `404` | Retrieve a Sequence by ID (public) |
-| `PATCH` | `/sequences/{id}` | Bearer | `200` / `401` / `404` | Partially update a Sequence |
-| `DELETE` | `/sequences/{id}` | Bearer | `204` / `401` / `404` | Delete a Sequence |
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/health` | — | Liveness check |
+| `GET` | `/metrics` | — | Prometheus metrics |
 
-### Authentication
+### Auth and Users
 
-The application supports two authentication methods:
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/auth/token` | — | Password grant for local dev/tests |
+| `GET` | `/auth/google/login` | — | Start Google OAuth2 flow |
+| `GET` | `/auth/google/callback` | — | Google callback; redirects to SPA with JWT fragment |
+| `GET` | `/users/` | Bearer | List known users |
+| `GET` | `/users/me` | Bearer | Current user profile |
 
-**Google OAuth2 (primary)** — click "Sign in with Google" in the UI or navigate to `/auth/google/login`.
-See [docs/google-oauth-setup.md](docs/google-oauth-setup.md) for setup.
+### Routines
 
-**Password grant (for tests / scripts)** — requires `ENABLE_PASSWORD_AUTH=true` in `.env`:
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/routines/` | — | List routines |
+| `POST` | `/routines/` | Bearer | Create routine |
+| `GET` | `/routines/{id}` | — | Get routine detail |
+| `PUT` | `/routines/{id}` | Bearer | Update routine |
+| `DELETE` | `/routines/{id}` | Bearer | Delete routine |
+| `GET` | `/routines/{id}/actions` | — | List routine actions |
+| `POST` | `/routines/{id}/actions` | Bearer | Create action inside a routine |
+| `POST` | `/routines/{id}/run` | Bearer | Trigger immediate execution |
+
+### Actions and Executions
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `PUT` | `/actions/{id}` | Bearer | Update action |
+| `DELETE` | `/actions/{id}` | Bearer | Delete action |
+| `GET` | `/executions/active` | — | List currently running executions |
+| `GET` | `/executions/history` | — | List recent execution history |
+
+## Authentication
+
+The app supports two auth paths:
+
+- Google OAuth2 is the primary browser login flow.
+- `POST /auth/token` exists for local development, automation, and Playwright.
+
+Example password-grant flow:
 
 ```bash
-# 1. Get a token
 TOKEN=$(curl -s -X POST http://localhost:8000/auth/token \
   -d "username=admin&password=<your-password>" | jq -r .access_token)
 
-# 2. Use the token for write operations
-curl -X POST http://localhost:8000/sequences/ \
+curl -X POST http://localhost:8000/routines/ \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"name": "My Sequence", "description": "optional"}'
+  -d '{"name":"Morning Lights","schedule_type":"manual","is_active":true}'
 ```
-
-Read operations (`GET`) are public and do not require a token.
-
----
 
 ## Project Structure
 
-```
+```text
 .
-├── alembic/            # Migration environment & versions
+├── alembic/
 ├── backend/
-│   ├── main.py         # App entry point, logging config & metrics instrumentation
-│   ├── config.py       # pydantic-settings — single source of env config
-│   ├── models.py       # SQLAlchemy models (source of truth)
-│   ├── schemas.py      # Pydantic V2 DTOs
-│   ├── database.py     # Engine & session factory
-│   ├── routes.py       # API route handlers (sync def)
-│   ├── services.py     # Business logic
-│   ├── security.py     # JWT helpers, OAuth2 dependency providers (WriteDep)
-│   ├── auth_routes.py  # POST /auth/token — OAuth2 password grant (ENABLE_PASSWORD_AUTH)
-│   ├── google_oauth.py # Google OAuth2 helpers (state store, token exchange, user info)
-│   ├── user_routes.py  # GET /auth/google/login+callback, GET /users/, GET /users/me
-│   └── exceptions.py   # Exception handling decorator
+│   ├── main.py
+│   ├── auth_routes.py
+│   ├── user_routes.py
+│   ├── routine_routes.py
+│   ├── routine_services.py
+│   ├── execution_engine.py
+│   ├── scheduler.py
+│   ├── models.py
+│   ├── schemas.py
+│   ├── database.py
+│   ├── security.py
+│   ├── google_oauth.py
+│   └── redis_client.py
 ├── frontend/
 │   ├── src/
-│   │   ├── api/          # Fetch-based API client (proxied to port 8000)
-│   │   ├── composables/  # useAuth — token, isAuthenticated, user, login/logout
-│   │   ├── types/        # TypeScript DTOs matching backend schemas
-│   │   ├── views/        # SequenceListView, SequenceDetailView, LoginView, AuthCallbackView, UsersView
-│   │   ├── components/   # AppNavbar, AppSidebar
-│   │   └── __tests__/    # Vitest unit + component tests (jsdom, mocked API)
-│   ├── e2e/              # Playwright browser E2E tests (real Chromium + real backend)
-│   │   ├── pages/        # Page Object Model (SequenceListPage, dialogs, …)
-│   │   ├── sequences.list.spec.ts
-│   │   ├── sequences.crud.spec.ts
-│   │   ├── sequences.detail.spec.ts
-│   │   └── auth.spec.ts  # Google OAuth login flow + auth-gated UI assertions
-│   ├── playwright.config.ts  # Chromium, allure reporter, webServer block
-│   ├── vite.config.ts        # Proxy /sequences, /auth, /users, /health → localhost:8000
-│   └── vitest.config.ts
-├── monitoring/
-│   ├── prometheus/
-│   │   └── prometheus.yml          # Scrape config (targets host:8000)
-│   └── grafana/
-│       ├── provisioning/
-│       │   ├── datasources/        # Auto-provisions Prometheus datasource
-│       │   └── dashboards/         # Points Grafana at dashboard JSON dir
-│       └── dashboards/
-│           ├── fastapi.json        # FastAPI Observability dashboard (RED metrics)
-│           └── loki.json           # FastAPI Logs dashboard (LogQL)
+│   │   ├── api/
+│   │   ├── features/
+│   │   ├── stores/
+│   │   ├── views/
+│   │   ├── components/
+│   │   ├── test/
+│   │   └── __tests__/
+│   ├── e2e/
+│   └── package.json
 ├── tests/
-│   ├── conftest.py     # Fixtures — testcontainers PostgreSQL, savepoint isolation, TestClient
+│   ├── test_auth.py
+│   ├── test_google_oauth.py
 │   ├── test_health.py
 │   ├── test_metrics.py
-│   ├── test_sequences.py
-│   └── perf/           # Performance tests (marked perf, excluded from default run)
-│       ├── helpers.py
-│       ├── test_event_loop_blocking.py
-│       └── test_db_event_loop_blocking.py
+│   ├── test_routines.py
+│   ├── test_users.py
+│   ├── e2e/
+│   └── perf/
+├── monitoring/
 ├── docs/
-│   ├── architecture.md # System architecture and key decisions
-│   └── frontend.md     # Frontend architecture, tech stack, test guide
-├── .env                # Database credentials (not committed)
-├── .python-version     # pyenv version pin
-├── alembic.ini
-├── docker-compose.yml  # PostgreSQL, Prometheus, Loki, Grafana (monitoring profile)
-├── justfile            # Task runner — use `just ci` as pre-PR gate
+├── scripts/
+├── docker-compose.yml
+├── justfile
 └── pyproject.toml
 ```
-
----
 
 ## Further Reading
 
 | Document | Description |
 |----------|-------------|
-| [Architecture](docs/architecture.md) | System architecture, key decisions, C4 diagrams |
-| [Frontend](docs/frontend.md) | SPA architecture, tech stack, Playwright E2E guide |
-| [Google OAuth2 Setup](docs/google-oauth-setup.md) | Step-by-step Google Cloud Console guide + troubleshooting |
-| [Testing Strategy](docs/testing.md) | All test layers — philosophy, data strategy, Allure, CI mapping |
-| [Python Toolchain](docs/python-toolchain.md) | How pyenv, Poetry, `.venv`, and your IDE relate |
-
----
+| [docs/architecture.md](docs/architecture.md) | System architecture and major design decisions |
+| [docs/frontend.md](docs/frontend.md) | Frontend architecture, routes, and test setup |
+| [docs/how-to-add-a-crud-feature.md](docs/how-to-add-a-crud-feature.md) | Repo-specific guide for adding a new CRUD feature end to end |
+| [docs/testing.md](docs/testing.md) | Test strategy and pyramid |
+| [docs/google-oauth-setup.md](docs/google-oauth-setup.md) | Google OAuth2 setup and troubleshooting |
+| [docs/python-toolchain.md](docs/python-toolchain.md) | Python, Poetry, and IDE tooling |
 
 ## Architecture Notes
 
-- **Sync-first**: Handlers use `def` (not `async def`) so FastAPI offloads them to its external thread pool, keeping the event loop free from blocking I/O.
-- **Dependency injection**: `get_session` manages the SQLAlchemy session lifecycle (Unit of Work pattern). Overridden in tests via `app.dependency_overrides`.
-- **Real DB in tests**: Tests run against a real PostgreSQL container via `testcontainers` — no SQLite, no mocking the database layer.
-- **Exception handling**: `@handle_exception(logger)` captures full tracebacks via `logger.exception`.
-- **Migrations**: Alembic autogenerate — edit `backend/models.py`, then run `just makemigrations "describe change"` followed by `just migrate`.
-- **Observability**: `prometheus-fastapi-instrumentator` exposes RED metrics at `/metrics`. Prometheus scrapes every 15s; the FastAPI Observability dashboard is pre-provisioned. Structured JSON logs are shipped directly to Loki via `python-logging-loki` and queryable in the FastAPI Logs Grafana dashboard.
-- **Frontend**: Vite dev server proxies `/sequences`, `/auth`, `/users`, and `/health` to the backend at port 8000, so both run independently and no CORS config is needed in development. The `/auth` proxy has **no HTML bypass** — OAuth redirects must reach the backend, not the SPA shell.
-- **Authentication**: JWT Bearer tokens via `python-jose` (HS256). Write endpoints (`POST`/`PATCH`/`DELETE`) require a valid token; `GET` endpoints are public. Google OAuth2 is the primary login method (backend-driven Authorization Code Flow — the client secret never leaves the server). A password grant (`POST /auth/token`) is available when `ENABLE_PASSWORD_AUTH=true` — used by E2E tests and scripts. See [docs/google-oauth-setup.md](docs/google-oauth-setup.md).
-- **Single-worker constraint**: The OAuth2 CSRF state store is in-memory (a Python dict). Run the backend with a single worker (`just backend-dev` uses `--workers 1`). Multi-worker deployments would require a shared store (e.g. Redis).
+- Sync FastAPI handlers are used intentionally so blocking DB work runs in FastAPI's thread pool instead of on the event loop.
+- Backend updates now preserve scheduler invariants transactionally; invalid routine state is rejected before commit.
+- Routine execution is launched through an explicit execution boundary in `backend/execution_engine.py`, not route-level ad hoc thread creation.
+- The frontend uses PrimeVue in unstyled mode, Tailwind CSS, Pinia for auth state, and TanStack Query for server-state management.
+- Frontend contract tests use generated OpenAPI types plus MSW, so most UI behavior is tested below the browser layer.
+- Playwright remains intentionally light and smoke-oriented; the repo follows a test pyramid with a somewhat thick middle.

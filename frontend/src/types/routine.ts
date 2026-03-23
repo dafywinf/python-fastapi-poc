@@ -1,56 +1,73 @@
-export interface Routine {
-  id: number
-  name: string
-  description: string | null
-  schedule_type: 'cron' | 'interval' | 'manual'
-  schedule_config: { cron: string } | { seconds: number } | null
-  is_active: boolean
-  created_at: string
+import type { components } from '../api/generated/schema'
+
+type GeneratedActionCreate = components['schemas']['ActionCreate']
+type GeneratedActionResponse = components['schemas']['ActionResponse']
+type GeneratedActionUpdate = components['schemas']['ActionUpdate']
+type GeneratedExecutionResponse = components['schemas']['ExecutionResponse']
+type GeneratedRoutineCreate = components['schemas']['RoutineCreate']
+type GeneratedRoutineResponse = components['schemas']['RoutineResponse']
+type GeneratedRoutineUpdate = components['schemas']['RoutineUpdate']
+
+export type ScheduleType = GeneratedRoutineCreate['schedule_type']
+export type ScheduleConfig = { cron: string } | { seconds: number }
+export type ActionType = GeneratedActionCreate['action_type']
+export type ActionConfig = { message: string } | { seconds: number }
+
+export type Action = Omit<
+  GeneratedActionResponse,
+  'action_type' | 'config'
+> & {
+  action_type: ActionType
+  config: ActionConfig
+}
+
+export type Routine = Omit<
+  GeneratedRoutineResponse,
+  'schedule_type' | 'schedule_config' | 'actions'
+> & {
+  schedule_type: ScheduleType
+  schedule_config: ScheduleConfig | null
   actions: Action[]
 }
 
-export interface Action {
-  id: number
-  routine_id: number
-  position: number
-  action_type: 'sleep' | 'echo'
-  config: { seconds: number } | { message: string }
-}
+export type ExecutionTrigger = 'cron' | 'interval' | 'manual'
 
-export interface RoutineExecution {
-  id: number
-  routine_id: number
-  routine_name: string
+export type RoutineExecution = Omit<
+  GeneratedExecutionResponse,
+  'status' | 'triggered_by'
+> & {
   status: 'running' | 'completed' | 'failed'
-  triggered_by: 'cron' | 'interval' | 'manual'
-  started_at: string
-  completed_at: string | null
+  triggered_by: ExecutionTrigger
 }
 
-export interface RoutineCreate {
-  name: string
-  description?: string | null
-  schedule_type: 'cron' | 'interval' | 'manual'
-  schedule_config?: { cron: string } | { seconds: number } | null
+export type RoutineCreate = Omit<
+  GeneratedRoutineCreate,
+  'schedule_config' | 'is_active'
+> & {
+  schedule_config?: ScheduleConfig | null
   is_active?: boolean
 }
 
-export interface RoutineUpdate {
+export type RoutineUpdate = Omit<
+  GeneratedRoutineUpdate,
+  'name' | 'schedule_type' | 'schedule_config' | 'is_active'
+> & {
   name?: string
-  description?: string | null
-  schedule_type?: 'cron' | 'interval' | 'manual'
-  schedule_config?: { cron: string } | { seconds: number } | null
+  schedule_type?: ScheduleType
+  schedule_config?: ScheduleConfig | null
   is_active?: boolean
 }
 
-export interface ActionCreate {
-  action_type: 'sleep' | 'echo'
-  config: { seconds: number } | { message: string }
+export type ActionCreate = Omit<GeneratedActionCreate, 'config' | 'position'> & {
+  config: ActionConfig
   position?: number
 }
 
-export interface ActionUpdate {
-  action_type?: 'sleep' | 'echo'
-  config?: { seconds: number } | { message: string }
+export type ActionUpdate = Omit<
+  GeneratedActionUpdate,
+  'action_type' | 'config' | 'position'
+> & {
+  action_type?: ActionType
+  config?: ActionConfig
   position?: number
 }

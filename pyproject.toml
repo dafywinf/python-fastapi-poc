@@ -49,7 +49,7 @@ pythonVersion = "3.12"
 reportMissingTypeStubs = "none"
 reportUntypedFunctionDecorator = "none"
 reportUntypedClassDecorator = "none"
-exclude = ["alembic", ".venv", "frontend"]
+exclude = ["alembic", ".venv", "frontend", ".worktrees", "allure-report-backend", "allure-report-combined", "allure-results"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -20,6 +20,24 @@ async function getToken(): Promise<string> {
   return body.access_token
 }
 
+async function withAuthedContext<T>(
+  callback: (context: Awaited<ReturnType<typeof pwRequest.newContext>>) => Promise<T>,
+): Promise<T> {
+  const token = await getToken()
+  const context = await pwRequest.newContext({
+    baseURL: BASE_API,
+    extraHTTPHeaders: {
+      Authorization: `Bearer ${token}`,
+    },
+  })
+
+  try {
+    return await callback(context)
+  } finally {
+    await context.dispose()
+  }
+}
+
 /**
  * Obtain a JWT token and store it in the browser's localStorage so that
  * the frontend API client includes it on write requests.
@@ -29,4 +47,29 @@ export async function injectAuthToken(page: Page): Promise<void> {
   const token = await getToken()
   await page.goto('http://localhost:5173')
   await page.evaluate((t) => localStorage.setItem('access_token', t), token)
+}
+
+export async function createRoutine(name: string): Promise<{ id: number }> {
+  return withAuthedContext(async (context) => {
+    const response = await context.post('/routines/', {
+      data: {
+        name,
+        schedule_type: 'manual',
+        schedule_config: null,
+        is_active: true,
+      },
+    })
+    return (await response.json()) as { id: number }
+  })
+}
+
+export async function createAction(
+  routineId: number,
+  payload: { action_type: 'echo' | 'sleep'; config: Record<string, unknown> },
+): Promise<void> {
+  await withAuthedContext(async (context) => {
+    await context.post(`/routines/${routineId}/actions`, {
+      data: payload,
+    })
+  })
 }

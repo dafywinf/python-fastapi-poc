@@ -2,233 +2,252 @@
 
 ## Overview
 
-This project is a full-stack sequence management application demonstrating production-grade
-patterns across a synchronous Python backend and a modern TypeScript SPA. The backend uses
-layered architecture, real-database integration tests, dependency injection, structured
-exception handling, a full observability stack (Prometheus + Grafana + Loki), and Google OAuth2 social login with JWT-based session management. The
-frontend is a Vite + Vue 3 SPA with native `<dialog>` modals and Tailwind CSS. Both layers are
-intentionally kept small so that each pattern is legible in isolation.
+This project is a full-stack home automation routines application intended to be
+readable as a reference implementation, not just functional as a demo.
 
-See also: [`docs/frontend.md`](./frontend.md) for the SPA-specific architecture and
-[`docs/testing.md`](./testing.md) for the full testing strategy across all layers.
+The backend is a synchronous FastAPI application with SQLAlchemy, PostgreSQL,
+APScheduler, Redis-backed execution coordination, Google OAuth2 login, JWT-based
+authorization, structured logging, Prometheus metrics, and a real-database test
+suite.
 
----
+The frontend is a Vue 3 SPA with PrimeVue, Tailwind, Pinia, TanStack Query, an
+OpenAPI-backed client contract, MSW-powered component tests, and light
+Playwright smoke coverage.
+
+See also:
+
+- [docs/frontend.md](./frontend.md)
+- [docs/testing.md](./testing.md)
 
 ## Key Architectural Decisions
 
-### Sync-first handlers (`def`, not `async def`)
+### Sync-first FastAPI handlers
 
-Route handlers are plain `def` functions. FastAPI detects this and offloads each request to
-its external thread pool (via `anyio`), leaving the event loop free from blocking I/O. This
-avoids the common pitfall of accidentally blocking the event loop with synchronous database
-calls inside `async def` handlers. The trade-off is that true async I/O (e.g. `asyncpg`) is
-not available, but for a PostgreSQL-backed CRUD service the thread-pool approach is simpler
-and correct.
+Route handlers use `def`, not `async def`, so FastAPI runs them in its external
+thread pool. That keeps the event loop free from blocking SQLAlchemy and other
+synchronous I/O. The repo includes dedicated performance tests to demonstrate
+why this matters.
 
-### Layered structure: Routes → Services → Database
+### Layered backend structure
 
-HTTP handlers in `backend/routes.py` call business logic in `backend/services.py`, which
-calls the database. Routes never touch the database directly. This keeps HTTP concerns (status
-codes, request/response shapes) separate from business logic and makes services independently
-testable.
+The backend is intentionally split into layers:
 
-### Real PostgreSQL in tests via testcontainers
+- route modules own HTTP concerns
+- service modules own business rules and persistence workflows
+- schema modules own validation and response contracts
+- execution and scheduler modules own routine execution concerns
 
-Tests run against a real PostgreSQL container spun up by `testcontainers`. There is no SQLite
-fallback and no mocking of the database layer. Each test is wrapped in a transaction that is
-rolled back via a savepoint (`join_transaction_mode="create_savepoint"`), giving full
-isolation without truncation. This caught real migration issues that SQLite-based tests would
-have missed.
+That keeps the API surface readable and makes correctness fixes less likely to
+leak across unrelated concerns.
 
-### Dependency injection via `get_session`
+### Transaction-safe routine updates
 
-The SQLAlchemy session lifecycle is managed by the `get_session` dependency, injected with
-`Annotated[Session, Depends(get_session)]`. Tests override this dependency via
-`app.dependency_overrides` to inject a session bound to the rollback transaction. The
-fetch-or-404 pattern is also extracted into a named dependency rather than duplicated across
-handlers.
+Routine schedule updates now validate the merged post-update schedule before
+commit, and scheduler registration is part of the same logical update workflow.
+This avoids persisting invalid routine state or drifting the database away from
+the scheduler's registered jobs.
 
-### All config via `backend/config.py`
+### Explicit execution boundary
 
-A `pydantic-settings` `BaseSettings` subclass reads all environment variables (including
-`.env`). Nothing in the application reads `os.environ` directly. This makes the config
-surface explicit and type-checked.
+Routine execution is no longer launched ad hoc from the route layer. The backend
+now uses an explicit execution boundary in `backend/execution_engine.py`,
+centered on `RoutineExecutor` and `BackgroundRoutineLauncher`. Route handlers
+delegate to that boundary rather than creating raw threads themselves.
 
-### Structured JSON logging + Loki log shipping
+That matters because execution orchestration is now:
 
-All log output is formatted as JSON via `python-json-logger` (`pythonjsonlogger.json.JsonFormatter`),
-making every log line parseable by LogQL. When `LOKI_URL` is set in the environment, a
-`logging_loki.LokiHandler` is added to the root logger at startup, pushing all log lines
-directly to the Loki HTTP push API (`/loki/api/v1/push`) tagged with `{application="fastapi"}`.
-The handler is initialised conditionally and failures are caught so the app starts cleanly
-even without Loki running. This avoids the Promtail Docker socket discovery approach, which
-cannot capture logs from a host process.
+- more testable
+- easier to substitute
+- less coupled to route handlers
 
-### Exception handling via `@handle_exception`
+### Real PostgreSQL in tests
 
-All route handlers are decorated with `@handle_exception(logger)` from
-`backend/exceptions.py`. This ensures that full tracebacks are captured via
-`logger.exception` rather than being swallowed silently, which is critical for observability.
+Backend tests use a real PostgreSQL container via testcontainers. There is no
+SQLite compatibility layer. This is deliberate: migrations, JSON behavior, and
+transaction handling are part of what the repo is trying to teach.
 
-### JWT authentication (Phase 2)
+### Contract-aware frontend testing
 
-Write endpoints (`POST`/`PATCH`/`DELETE`) are gated by `WriteDep` — an
-`Annotated[str, Depends(require_authenticated_user)]` type alias defined in
-`backend/security.py`. The dependency chain is:
+The frontend exports the backend OpenAPI schema and generates local TypeScript
+types. Those types feed the MSW-backed Vitest layer so frontend assumptions are
+checked against the API contract without needing to run the backend for every UI
+test.
 
-1. `oauth2_scheme` (`OAuth2PasswordBearer`, `auto_error=False`) extracts the raw Bearer
-   token from the `Authorization` header, or returns `None` if absent.
-2. `get_optional_user` verifies the token with `python-jose` (HS256, `JWT_SECRET_KEY`),
-   returning the username on success or `None` when no token is present. A token that IS
-   present but fails verification raises `401` immediately.
-3. `require_authenticated_user` raises `401` if `get_optional_user` returned `None`.
+### Test pyramid with a thick middle
 
-`GET` endpoints receive no auth dependency and remain fully public. Admin credentials
-(`ADMIN_PASSWORD_HASH`, bcrypt-hashed) are stored in config; no `users` database table
-is required in the MVP. The `POST /auth/token` endpoint implements the OAuth2 password
-grant and returns a signed JWT.
+Most confidence comes from backend integration tests and frontend component/
+integration tests. Playwright exists, but only as a light browser layer. The
+repo is intentionally not built as an E2E-heavy "ice cream cone."
 
-### Google OAuth2 Authentication (Backend-driven Authorization Code Flow)
-
-Authentication uses Google's OAuth2 Authorization Code Flow with server-side token exchange.
-The browser is redirected to `/auth/google/login`, which generates a CSRF state token and
-redirects to Google's consent screen. Google redirects back to `/auth/google/callback`, where
-the backend exchanges the authorization code for a Google access token (via `httpx` in sync
-mode), fetches the user profile, upserts the `users` table row, and issues a project-scoped
-JWT. The JWT is passed to the SPA as a `?token=` query parameter on a redirect to the frontend
-`/auth/callback` page.
-
-The client secret never leaves the backend. CSRF is prevented via the `state` parameter.
-The in-memory state store requires single-worker deployment (the default for `just backend-dev`).
-
-Key files: `backend/google_oauth.py` (OAuth2 protocol helpers), `backend/user_routes.py`
-(OAuth endpoints + `/users/` + `/users/me`).
-
----
-
-## Level 1 — System Context
+## Runtime Topology
 
 ```mermaid
 graph TD
-    dev["👤 Developer / User"]
-    spa["🖥️ Vue 3 SPA<br/>Vite dev server — port 5173<br/>Sequence Manager UI"]
-    api["🐍 FastAPI Sequence Manager<br/>Python 3.12 — sync handlers<br/>CRUD API + /metrics endpoint"]
-    postgres[("🐘 PostgreSQL<br/>Sequence records")]
-    prometheus["📈 Prometheus<br/>Time-series metrics store"]
-    loki["🪵 Grafana Loki<br/>Log aggregation store"]
-    grafana["📊 Grafana<br/>Metrics + Logs dashboards"]
+    user["User / Developer"]
+    spa["Vue 3 SPA<br/>Vite dev server :5173"]
+    api["FastAPI app<br/>Host process :8000"]
+    postgres[("PostgreSQL")]
+    redis[("Redis")]
+    prometheus["Prometheus"]
+    loki["Loki"]
+    grafana["Grafana"]
 
-    dev -->|"Uses browser UI"| spa
-    spa -->|"CRUD requests<br/>HTTP REST (via Vite proxy)"| api
-    api -->|"Reads & writes sequences<br/>SQL via psycopg2"| postgres
-    prometheus -->|"Scrapes every 15s<br/>GET /metrics"| api
-    api -->|"Pushes JSON log lines<br/>HTTP POST /loki/api/v1/push"| loki
-    grafana -->|"PromQL queries"| prometheus
-    grafana -->|"LogQL queries"| loki
-    dev -->|"Views metrics + logs<br/>in browser"| grafana
+    user -->|"browser"| spa
+    spa -->|"REST + OAuth callback navigation"| api
+    api --> postgres
+    api --> redis
+    prometheus -->|"scrapes /metrics"| api
+    api -->|"pushes logs"| loki
+    grafana --> prometheus
+    grafana --> loki
 ```
 
----
+## Backend Components
 
-## Level 2 — Containers
+### API Layer
 
-```mermaid
-graph TD
-    dev["👤 Developer / User"]
+- `backend/main.py`
+  Registers routers, metrics, logging, and scheduler startup/shutdown.
+- `backend/auth_routes.py`
+  Password-grant token endpoint for local dev and automation.
+- `backend/user_routes.py`
+  Google OAuth flow plus authenticated user endpoints.
+- `backend/routine_routes.py`
+  Routines, actions, run-now, and execution history endpoints.
 
-    spa["🖥️ Vue 3 SPA<br/>Vite — port 5173<br/>Host process<br/>TypeScript + native dialog"]
+### Domain and Workflow Layer
 
-    api["🐍 API<br/>Python 3.12 / FastAPI<br/>Sync handlers — thread pool<br/>Host process — port 8000"]
+- `backend/routine_services.py`
+  Routine and action business logic, including invariant-preserving updates.
+- `backend/execution_engine.py`
+  Execution launcher and executor boundary.
+- `backend/scheduler.py`
+  APScheduler integration for non-manual routines.
 
-    playwright["🎭 Playwright<br/>Chromium E2E tests<br/>e2e/*.spec.ts"]
+### Data and Security Layer
 
-    subgraph compose["Docker Compose (default + monitoring profile)"]
-        postgres[("🐘 PostgreSQL 16<br/>port 5432<br/>Stores sequences table")]
-        prometheus["📈 Prometheus<br/>port 9090<br/>Scrapes host.docker.internal:8000/metrics<br/>every 15s — stores time-series"]
-        loki["🪵 Grafana Loki 3.x<br/>port 3100<br/>Receives JSON log lines via HTTP push<br/>Stores and indexes log streams"]
-        grafana["📊 Grafana<br/>port 3000<br/>Auto-provisioned datasources + dashboards<br/>FastAPI Service (RED) + FastAPI Logs"]
-    end
+- `backend/models.py`
+  SQLAlchemy source of truth for schema shape.
+- `backend/schemas.py`
+  Pydantic validation and response contracts.
+- `backend/database.py`
+  SQLAlchemy engine and session lifecycle.
+- `backend/security.py`
+  JWT creation/verification and write-access dependency.
+- `backend/google_oauth.py`
+  OAuth redirect URL generation, token exchange, userinfo fetch, and CSRF state validation.
+- `backend/redis_client.py`
+  Redis integration used by the execution path.
 
-    dev -->|"Browser — port 5173"| spa
-    spa -->|"HTTP REST via proxy<br/>port 8000"| api
-    api -->|"psycopg2<br/>port 5432"| postgres
-    prometheus -->|"HTTP GET /metrics<br/>port 8000"| api
-    api -->|"HTTP POST /loki/api/v1/push<br/>port 3100"| loki
-    grafana -->|"PromQL<br/>port 9090"| prometheus
-    grafana -->|"LogQL<br/>port 3100"| loki
-    dev -->|"Browser — port 3000"| grafana
-    playwright -->|"drives real browser<br/>port 5173"| spa
-    playwright -->|"test setup/teardown<br/>direct REST — port 8000"| api
-```
+## Frontend Components
 
-> **Docker Compose profiles:** PostgreSQL runs under the default profile (always up).
-> Prometheus, Loki, and Grafana run under the `monitoring` profile:
-> `docker compose --profile monitoring up -d`
+### App Shell
 
----
+- `frontend/src/App.vue`
+  Layout shell and router outlet.
+- `frontend/src/components/layout/*`
+  Navbar and sidebar.
 
-## Level 3 — API Components
+### App State and Transport
 
-```mermaid
-graph TD
-    subgraph api["🐍 API Container (FastAPI process)"]
-        routes["routes.py<br/>HTTP handlers<br/>Request validation + HTTP responses<br/>@handle_exception on every handler"]
-        auth_routes["auth_routes.py<br/>POST /auth/token<br/>OAuth2 password grant<br/>Returns signed JWT"]
-        security["security.py<br/>JWT create/verify (python-jose)<br/>bcrypt verify (passlib)<br/>WriteDep — gates write endpoints"]
-        services["services.py<br/>Business logic<br/>No HTTP knowledge<br/>Operates on SQLAlchemy models"]
-        database["database.py<br/>Engine + session factory<br/>get_session DI provider<br/>Unit of Work via session lifecycle"]
-        config["config.py<br/>pydantic-settings BaseSettings<br/>Reads .env — single config surface<br/>No os.environ elsewhere"]
-        exc["exceptions.py<br/>@handle_exception decorator<br/>Captures full tracebacks<br/>via logger.exception"]
-        metrics["Prometheus Instrumentator<br/>Starlette middleware<br/>Instruments all routes<br/>Exposes GET /metrics"]
-        logging["main.py — logging setup<br/>JSON formatter (pythonjsonlogger)<br/>LokiHandler — conditional on LOKI_URL<br/>Pushes to Loki push API"]
-    end
+- `frontend/src/stores/auth.ts`
+  Pinia auth store.
+- `frontend/src/api/client.ts`
+  Shared API transport layer.
+- `frontend/src/api/generated/*`
+  Exported OpenAPI contract plus generated TS types.
 
-    postgres[("🐘 PostgreSQL")]
-    prometheus["📈 Prometheus"]
-    loki["🪵 Loki"]
-    dotenv[".env file"]
+### Feature Layer
 
-    routes -->|"delegates to"| services
-    routes -->|"wrapped by"| exc
-    routes -->|"WriteDep guards writes"| security
-    auth_routes -->|"verify password"| security
-    security -->|"JWT_SECRET_KEY<br/>ADMIN_PASSWORD_HASH"| config
-    services -->|"SQLAlchemy session<br/>from Depends"| database
-    database -->|"DATABASE_URL"| config
-    config -->|"reads"| dotenv
-    config -->|"LOKI_URL"| logging
-    database -->|"psycopg2 connection"| postgres
-    prometheus -->|"HTTP GET /metrics"| metrics
-    logging -->|"HTTP POST push"| loki
-```
+- `frontend/src/features/routines/*`
+  Query keys, queries, mutations, page composables, and extracted routine UI components.
+- `frontend/src/features/users/*`
+  User-list query logic.
 
----
+### Views
+
+- `frontend/src/views/RoutinesView.vue`
+- `frontend/src/views/RoutineDetailView.vue`
+- `frontend/src/views/ExecutionHistoryView.vue`
+- `frontend/src/views/UsersView.vue`
+- `frontend/src/views/LoginView.vue`
+- `frontend/src/views/AuthCallbackView.vue`
 
 ## Data Model
 
-### `sequences` table
+### `users`
 
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | Integer | Primary key, auto-increment |
-| `name` | String | Required |
-| `description` | String | Nullable |
-| `created_at` | DateTime | Server default `now()`, set by PostgreSQL |
-
-### `users` table
-
-Persists Google account profiles on first login and updates `name`/`picture` on subsequent
-logins. The `email` column is the JWT subject — used to resolve `WriteDep` to a full user
-object in the `/users/me` endpoint.
+Stores Google-authenticated users.
 
 | Column | Type | Notes |
 |---|---|---|
 | `id` | Integer PK | Auto-increment |
-| `google_id` | String UNIQUE | Stable Google account identifier |
-| `email` | String UNIQUE | JWT subject; displayed in UI |
-| `name` | String | Display name from Google profile |
-| `picture` | String (nullable) | Avatar URL — refreshed on every login |
-| `created_at` | DateTime(tz) | First login timestamp |
+| `google_id` | String unique | Stable Google identifier |
+| `email` | String unique | JWT subject |
+| `name` | String | Display name |
+| `picture` | String nullable | Avatar URL |
+| `created_at` | DateTime | First login timestamp |
 
-Schema is defined in `backend/models.py` (SQLAlchemy `Mapped` / `mapped_column`) and
-managed by Alembic migrations under `alembic/versions/`.
+### `routines`
+
+Stores routine definitions and their schedule metadata.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | Integer PK | Auto-increment |
+| `name` | String | Required |
+| `description` | String nullable | Optional |
+| `schedule_type` | String | `manual`, `interval`, or `cron` |
+| `schedule_config` | JSON nullable | Shape depends on `schedule_type` |
+| `is_active` | Boolean | Controls scheduler registration |
+| `created_at` | DateTime | Creation timestamp |
+
+### `actions`
+
+Stores ordered routine actions.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | Integer PK | Auto-increment |
+| `routine_id` | FK | Parent routine |
+| `position` | Integer | Ordered execution slot |
+| `action_type` | String | For example `shell`, `webhook`, `delay` |
+| `config` | JSON | Action-specific config |
+
+### `routine_executions`
+
+Stores execution history and active-run state.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | Integer PK | Auto-increment |
+| `routine_id` | FK | Parent routine |
+| `status` | String | `running`, `completed`, `failed` |
+| `triggered_by` | String | `manual` or scheduler-originated |
+| `started_at` | DateTime | Start timestamp |
+| `completed_at` | DateTime nullable | End timestamp |
+
+## Operational Notes
+
+### OAuth callback transport
+
+The backend redirects successful Google logins to:
+
+```text
+/auth/callback#token=<jwt>
+```
+
+The token is placed in the fragment, not the query string, so it is not sent to
+the server during the redirect.
+
+### Single-worker CSRF state store
+
+Google OAuth state is stored in memory. That means the default development mode
+must stay single-process unless the state store is moved to shared infrastructure
+such as Redis.
+
+### Observability
+
+Prometheus metrics are exposed at `/metrics`. JSON logs are emitted to stdout and
+can also be pushed to Loki when `LOKI_URL` is configured. Grafana is pre-wired
+to query both Prometheus and Loki.

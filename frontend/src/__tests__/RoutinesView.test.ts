@@ -1,29 +1,29 @@
-/**
- * Component tests for RoutinesView.
- *
- * The routinesApi module is mocked with vi.mock — components should not know
- * or care about HTTP; they call the API and react to the results.
- */
-
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
-import { createRouter, createMemoryHistory, type RouteRecordRaw } from 'vue-router'
-import { computed, ref } from 'vue'
+import { flushPromises } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as allure from 'allure-js-commons'
-import ToastService from 'primevue/toastservice'
+import { computed, ref } from 'vue'
+import type { paths } from '../api/generated/schema'
+import { applyFrontendAllureLabels } from '../test/allure'
+import { routinesHandlers } from '../test/msw/handlers'
+import { server } from '../test/msw/server'
+import { mountWithApp } from '../test/utils/render'
 import RoutinesView from '../views/RoutinesView.vue'
 
-vi.mock('../api/routines', () => ({
-  routinesApi: {
-    list: vi.fn().mockResolvedValue([]),
-    activeExecutions: vi.fn().mockResolvedValue([]),
-    executionHistory: vi.fn().mockResolvedValue([]),
-    create: vi.fn(),
-    update: vi.fn(),
-    delete: vi.fn(),
-    runNow: vi.fn(),
+type ListRoutinesResponse =
+  paths['/routines/']['get']['responses']['200']['content']['application/json']
+
+const mockRoutines: ListRoutinesResponse = [
+  {
+    id: 1,
+    name: 'Morning Lights',
+    description: 'Wake-up scene',
+    schedule_type: 'manual',
+    schedule_config: null,
+    is_active: true,
+    created_at: '2026-01-01T00:00:00Z',
+    actions: [],
   },
-}))
+]
 
 vi.mock('../composables/useAuth', () => ({
   useAuth: () => ({
@@ -36,48 +36,53 @@ vi.mock('../composables/useAuth', () => ({
   }),
 }))
 
-// Mock usePolling to avoid interval complexity in component tests
-vi.mock('../composables/usePolling', () => ({
-  usePolling: vi.fn().mockImplementation((fn: () => Promise<unknown>) => {
-    void fn() // call it once for coverage
-    return {
-      data: ref([]),
-      loading: ref(false),
-      error: ref(null),
-      refresh: vi.fn(),
-    }
-  }),
-}))
-
-function makeRouter(): ReturnType<typeof createRouter> {
-  const routes: RouteRecordRaw[] = [
-    { path: '/routines', component: RoutinesView },
-    { path: '/routines/:id', component: { template: '<div />' } },
-  ]
-  return createRouter({ history: createMemoryHistory(), routes })
-}
-
 describe('RoutinesView', () => {
   beforeEach(() => {
-    allure.epic('Frontend')
-    allure.feature('RoutinesView')
+    applyFrontendAllureLabels('Vitest', 'base')
+    allure.feature('Routines View')
+    vi.resetAllMocks()
   })
 
-  it('renders headings', async () => {
-    const wrapper = mount(RoutinesView, { global: { plugins: [makeRouter(), ToastService] } })
+  it('renders routines after loading', async () => {
+    server.use(routinesHandlers.list(mockRoutines))
+
+    const wrapper = await mountWithApp(RoutinesView, {}, '/routines')
     await flushPromises()
-    expect(wrapper.text()).toContain('Routines')
+
+    expect(wrapper.text()).toContain('Morning Lights')
     expect(wrapper.text()).toContain('Currently Executing')
     expect(wrapper.text()).toContain('Recent History')
   })
 
-  it('shows empty state when no routines', async () => {
-    const wrapper = mount(RoutinesView, { global: { plugins: [makeRouter(), ToastService] } })
+  it('shows a loading state initially', async () => {
+    server.use(
+      routinesHandlers.listPending(),
+      routinesHandlers.activeExecutionsPending(),
+      routinesHandlers.executionHistoryPending(),
+    )
+
+    const wrapper = await mountWithApp(RoutinesView, {}, '/routines')
+
+    expect(wrapper.text()).toContain('Loading')
+  })
+
+  it('shows an error message when the routines fetch fails', async () => {
+    server.use(routinesHandlers.listError(500, 'Network error'))
+
+    const wrapper = await mountWithApp(RoutinesView, {}, '/routines')
     await flushPromises()
-    // PrimeVue DataTable renders column headers with no rows when the list is empty
+
+    expect(wrapper.text()).toContain('Network error')
+  })
+
+  it('shows empty state when no routines exist', async () => {
+    server.use(routinesHandlers.list([]))
+
+    const wrapper = await mountWithApp(RoutinesView, {}, '/routines')
+    await flushPromises()
+
     expect(wrapper.text()).toContain('Name')
     expect(wrapper.text()).toContain('Schedule')
-    // Adjacent panels show their own empty states
     expect(wrapper.text()).toContain('None running')
     expect(wrapper.text()).toContain('No history')
   })

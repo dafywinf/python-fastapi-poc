@@ -5,7 +5,6 @@ thread pool, keeping the event loop free from blocking database I/O.
 """
 
 import logging
-from threading import Thread
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -13,8 +12,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.database import get_session
+from backend.domain_types import EXECUTION_TRIGGER_MANUAL
 from backend.exceptions import handle_exception
-from backend.execution_engine import run_routine
+from backend.execution_engine import execution_launcher
 from backend.models import Action, Routine
 from backend.routine_services import (
     create_action,
@@ -175,7 +175,12 @@ def update_routine_handler(
     Returns:
         The updated Routine with its nested Actions.
     """
-    return RoutineResponse.model_validate(update_routine(session, routine, payload))
+    try:
+        return RoutineResponse.model_validate(update_routine(session, routine, payload))
+    except ValueError as err:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(err)
+        ) from err
 
 
 @routines_router.delete("/{routine_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -233,7 +238,13 @@ def create_action_handler(
     Returns:
         The created Action.
     """
-    return ActionResponse.model_validate(create_action(session, routine.id, payload))
+    try:
+        action = create_action(session, routine.id, payload)
+        return ActionResponse.model_validate(action)
+    except ValueError as err:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(err)
+        ) from err
 
 
 @routines_router.post(
@@ -261,19 +272,20 @@ def run_now_handler(
     Raises:
         HTTPException: 409 if the Routine is already running.
     """
+    routine_id = routine.id
     try:
-        execution = insert_execution_row(session, routine.id, triggered_by="manual")
+        execution = insert_execution_row(
+            session,
+            routine_id,
+            triggered_by=EXECUTION_TRIGGER_MANUAL,
+        )
     except IntegrityError:
+        logger.warning("Routine conflict: already running (routine_id=%d)", routine_id)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Routine is already running",
         )
-    thread = Thread(
-        target=run_routine,
-        args=[routine.id, "manual", execution.id],
-        daemon=True,
-    )
-    thread.start()
+    execution_launcher.start(routine.id, EXECUTION_TRIGGER_MANUAL, execution.id)
     return RunResponse(execution_id=execution.id)
 
 
@@ -301,7 +313,12 @@ def update_action_handler(
     Returns:
         The updated Action.
     """
-    return ActionResponse.model_validate(update_action(session, action, payload))
+    try:
+        return ActionResponse.model_validate(update_action(session, action, payload))
+    except ValueError as err:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(err)
+        ) from err
 
 
 @actions_router.delete("/{action_id}", status_code=status.HTTP_204_NO_CONTENT)

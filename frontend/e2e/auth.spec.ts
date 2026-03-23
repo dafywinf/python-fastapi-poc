@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { allure } from 'allure-playwright'
+import { applyFrontendE2EAllureLabels } from './helpers/allure'
 import { injectAuthToken } from './helpers/api'
 
 /**
@@ -14,11 +15,13 @@ const FRONTEND_URL = 'http://localhost:5173'
 
 test.describe('Auth UI', () => {
   test.beforeEach(async () => {
-    await allure.epic('Frontend')
+    await applyFrontendE2EAllureLabels('Browser E2E', 'top')
     await allure.feature('Auth UI')
   })
 
-  test('unauthenticated user sees Sign in button in navbar', async ({ page }) => {
+  test('unauthenticated user sees Sign in button in navbar', async ({
+    page,
+  }) => {
     await allure.story('Unauthenticated state')
     await page.goto(`${FRONTEND_URL}/routines`)
     await expect(page.getByText('Sign in with Google')).toBeVisible()
@@ -32,17 +35,25 @@ test.describe('Auth UI', () => {
     await expect(page.getByText('Logout')).toBeVisible()
   })
 
-  test('authenticated user sees New Routine button on routines page', async ({ page }) => {
+  test('authenticated user sees New Routine button on routines page', async ({
+    page,
+  }) => {
     await allure.story('Authenticated state')
     await injectAuthToken(page)
     await page.goto(`${FRONTEND_URL}/routines`)
-    await expect(page.getByRole('button', { name: /new routine/i })).toBeVisible()
+    await expect(
+      page.getByRole('button', { name: /new routine/i }),
+    ).toBeVisible()
   })
 
-  test('unauthenticated user does not see New Routine button', async ({ page }) => {
+  test('unauthenticated user does not see New Routine button', async ({
+    page,
+  }) => {
     await allure.story('Unauthenticated state')
     await page.goto(`${FRONTEND_URL}/routines`)
-    await expect(page.getByRole('button', { name: /new routine/i })).not.toBeVisible()
+    await expect(
+      page.getByRole('button', { name: /new routine/i }),
+    ).not.toBeVisible()
   })
 
   test('logout button clears auth state', async ({ page }) => {
@@ -56,19 +67,23 @@ test.describe('Auth UI', () => {
 
 test.describe('Users page', () => {
   test.beforeEach(async () => {
-    await allure.epic('Frontend')
+    await applyFrontendE2EAllureLabels('Browser E2E', 'top')
     await allure.feature('Users Page')
   })
 
-  test('users page is accessible without login', async ({ page }) => {
-    await allure.story('Public access')
+  test('users page redirects to login when unauthenticated', async ({
+    page,
+  }) => {
+    await allure.story('Protected route')
     await page.goto(`${FRONTEND_URL}/users`)
-    await expect(page.getByRole('heading', { name: 'Users' })).toBeVisible()
+    await expect(page).toHaveURL(/\/login\?redirect=/)
+    await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
   })
 
-  test('users page shows the Users nav link', async ({ page }) => {
-    await allure.story('Navigation')
-    await page.goto(`${FRONTEND_URL}/routines`)
-    await expect(page.getByRole('link', { name: 'Users' })).toBeVisible()
+  test('authenticated user can access users page', async ({ page }) => {
+    await allure.story('Protected route')
+    await injectAuthToken(page)
+    await page.goto(`${FRONTEND_URL}/users`)
+    await expect(page.getByRole('heading', { name: 'Users' })).toBeVisible()
   })
 })

@@ -1,0 +1,28 @@
+# Allowed outbound domains — one per line, comments start with #.
+# The firewall resolves these to IPs at container start and blocks everything else.
+
+# Claude API
+api.anthropic.com
+statsig.anthropic.com
+sentry.io
+
+# Claude Code distribution (always GitHub, regardless of project forge)
+github.com
+api.github.com
+
+# Python package registry (pip / Poetry)
+pypi.org
+files.pythonhosted.org
+
+# npm registry (Claude Code runs `npm install` for MCP servers at runtime)
+registry.npmjs.org
+
+# Docker Hub registry (Testcontainers pulls postgres, redis, etc.)
+registry-1.docker.io
+auth.docker.io
+production.cloudflare.docker.com
+
+# VS Code remote server + extension marketplace
+marketplace.visualstudio.com
+vscode.blob.core.windows.net
+update.code.visualstudio.com

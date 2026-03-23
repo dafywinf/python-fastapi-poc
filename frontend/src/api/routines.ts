@@ -7,88 +7,72 @@ import type {
   RoutineExecution,
   RoutineUpdate,
 } from '../types/routine'
+import { apiClient } from './client'
 
 const ROUTINES_BASE = '/routines'
 const ACTIONS_BASE = '/actions'
 const EXECUTIONS_BASE = '/executions'
 
-function authHeaders(): Record<string, string> {
-  const token = localStorage.getItem('access_token')
-  return token ? { Authorization: `Bearer ${token}` } : {}
-}
-
-async function request<T>(url: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(url, {
-    ...options,
-    headers: { 'Content-Type': 'application/json', ...authHeaders(), ...options?.headers },
-  })
-  if (!response.ok) {
-    const detail = await response.json().catch(() => ({ detail: response.statusText }))
-    throw new Error(detail.detail ?? response.statusText)
-  }
-  if (response.status === 204) return undefined as T
-  return response.json() as Promise<T>
-}
-
 export const routinesApi = {
   list(): Promise<Routine[]> {
-    return request<Routine[]>(ROUTINES_BASE + '/')
+    return apiClient.get<Routine[]>(ROUTINES_BASE + '/')
   },
 
   get(id: number): Promise<Routine> {
-    return request<Routine>(`${ROUTINES_BASE}/${id}`)
+    return apiClient.get<Routine>(`${ROUTINES_BASE}/${id}`)
   },
 
   create(payload: RoutineCreate): Promise<Routine> {
-    return request<Routine>(ROUTINES_BASE + '/', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    })
+    return apiClient.post<Routine>(ROUTINES_BASE + '/', payload)
   },
 
   update(id: number, payload: RoutineUpdate): Promise<Routine> {
-    return request<Routine>(`${ROUTINES_BASE}/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(payload),
-    })
+    return apiClient.put<Routine>(`${ROUTINES_BASE}/${id}`, payload)
   },
 
   delete(id: number): Promise<void> {
-    return request<void>(`${ROUTINES_BASE}/${id}`, { method: 'DELETE' })
+    return apiClient.delete<void>(`${ROUTINES_BASE}/${id}`)
   },
 
   listActions(routineId: number): Promise<Action[]> {
-    return request<Action[]>(`${ROUTINES_BASE}/${routineId}/actions`)
+    return apiClient.get<Action[]>(`${ROUTINES_BASE}/${routineId}/actions`)
   },
 
   createAction(routineId: number, payload: ActionCreate): Promise<Action> {
-    return request<Action>(`${ROUTINES_BASE}/${routineId}/actions`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    })
+    return apiClient.post<Action>(
+      `${ROUTINES_BASE}/${routineId}/actions`,
+      payload,
+    )
   },
 
   updateAction(id: number, payload: ActionUpdate): Promise<Action> {
-    return request<Action>(`${ACTIONS_BASE}/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(payload),
-    })
+    return apiClient.put<Action>(`${ACTIONS_BASE}/${id}`, payload)
   },
 
   deleteAction(id: number): Promise<void> {
-    return request<void>(`${ACTIONS_BASE}/${id}`, { method: 'DELETE' })
+    return apiClient.delete<void>(`${ACTIONS_BASE}/${id}`)
   },
 
   runNow(id: number): Promise<{ execution_id: number }> {
-    return request<{ execution_id: number }>(`${ROUTINES_BASE}/${id}/run`, { method: 'POST' })
+    return apiClient.post<{ execution_id: number }>(
+      `${ROUTINES_BASE}/${id}/run`,
+    )
   },
 
   activeExecutions(): Promise<RoutineExecution[]> {
-    return request<RoutineExecution[]>(`${EXECUTIONS_BASE}/active`)
+    return apiClient.get<RoutineExecution[]>(`${EXECUTIONS_BASE}/active`)
   },
 
-  executionHistory(limit?: number, routineId?: number): Promise<RoutineExecution[]> {
-    const url = `${EXECUTIONS_BASE}/history?limit=${limit ?? 10}${routineId ? `&routine_id=${routineId}` : ''}`
-    return request<RoutineExecution[]>(url)
+  executionHistory(
+    limit?: number,
+    routineId?: number,
+  ): Promise<RoutineExecution[]> {
+    const params = new URLSearchParams({ limit: String(limit ?? 10) })
+    if (routineId !== undefined) {
+      params.set('routine_id', String(routineId))
+    }
+    return apiClient.get<RoutineExecution[]>(
+      `${EXECUTIONS_BASE}/history?${params.toString()}`,
+    )
   },
 }

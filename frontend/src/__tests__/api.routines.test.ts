@@ -1,80 +1,101 @@
-/**
- * Tests for the routines API client.
- *
- * fetch is replaced with a lightweight mock so tests run in jsdom without a
- * real server. Each suite restores the mock after every test.
- */
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as allure from 'allure-js-commons'
+import type { components, paths } from '../api/generated/schema'
 import { routinesApi } from '../api/routines'
+import { applyFrontendAllureLabels } from '../test/allure'
+import { routinesHandlers } from '../test/msw/handlers'
+import { server } from '../test/msw/server'
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+type ListRoutinesResponse =
+  paths['/routines/']['get']['responses']['200']['content']['application/json']
+type RoutineResponse = components['schemas']['RoutineResponse']
+type ExecutionHistoryResponse =
+  paths['/executions/history']['get']['responses']['200']['content']['application/json']
 
-function mockFetch(body: unknown, status = 200): void {
-  const response = new Response(
-    status === 204 ? null : JSON.stringify(body),
-    { status, headers: { 'Content-Type': 'application/json' } },
-  )
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response))
+const routine: RoutineResponse = {
+  id: 1,
+  name: 'Test routine',
+  description: null,
+  schedule_type: 'manual',
+  schedule_config: null,
+  is_active: true,
+  created_at: '2026-01-01T00:00:00Z',
+  actions: [],
 }
 
-afterEach(() => vi.unstubAllGlobals())
-
-// ── Test suites ───────────────────────────────────────────────────────────────
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 describe('routinesApi', () => {
   beforeEach(() => {
-    allure.epic('Frontend')
+    applyFrontendAllureLabels('Vitest', 'base')
     allure.feature('routinesApi')
   })
 
   it('list calls GET /routines/', async () => {
-    mockFetch([])
+    const fetchSpy = vi.spyOn(global, 'fetch')
+    server.use(routinesHandlers.list([] satisfies ListRoutinesResponse))
     await routinesApi.list()
-    expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+    expect(fetchSpy).toHaveBeenCalledWith(
       '/routines/',
-      expect.objectContaining({ headers: expect.objectContaining({ 'Content-Type': 'application/json' }) }),
+      expect.objectContaining({ method: 'GET' }),
     )
+    const [, options] = fetchSpy.mock.calls[0] ?? []
+    expect(options).toBeDefined()
+    expect((options as RequestInit).headers).toBeInstanceOf(Headers)
   })
 
   it('create calls POST /routines/', async () => {
-    mockFetch({ id: 1, name: 'Test', actions: [] }, 201)
-    await routinesApi.create({ name: 'Test', schedule_type: 'manual', schedule_config: null })
-    expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+    const fetchSpy = vi.spyOn(global, 'fetch')
+    server.use(routinesHandlers.create(routine))
+
+    const result = await routinesApi.create({
+      name: 'Test',
+      schedule_type: 'manual',
+      schedule_config: null,
+    })
+
+    expect(result.id).toBe(1)
+    expect(fetchSpy).toHaveBeenCalledWith(
       '/routines/',
       expect.objectContaining({ method: 'POST' }),
     )
   })
 
   it('delete calls DELETE and returns undefined', async () => {
-    mockFetch(null, 204)
+    const fetchSpy = vi.spyOn(global, 'fetch')
+    server.use(routinesHandlers.delete())
     const result = await routinesApi.delete(1)
     expect(result).toBeUndefined()
-    expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+    expect(fetchSpy).toHaveBeenCalledWith(
       '/routines/1',
       expect.objectContaining({ method: 'DELETE' }),
     )
   })
 
   it('runNow calls POST /routines/{id}/run', async () => {
-    mockFetch({ execution_id: 42 }, 202)
+    const fetchSpy = vi.spyOn(global, 'fetch')
+    server.use(routinesHandlers.runNow({ execution_id: 42 }))
     const result = await routinesApi.runNow(5)
     expect(result.execution_id).toBe(42)
-    expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+    expect(fetchSpy).toHaveBeenCalledWith(
       '/routines/5/run',
       expect.objectContaining({ method: 'POST' }),
     )
   })
 
   it('executionHistory builds correct URL with params', async () => {
-    mockFetch([])
+    const fetchSpy = vi.spyOn(global, 'fetch')
+    const history: ExecutionHistoryResponse = []
+    server.use(routinesHandlers.executionHistory(history))
     await routinesApi.executionHistory(20, 3)
-    expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+
+    expect(fetchSpy).toHaveBeenCalledWith(
       expect.stringContaining('limit=20'),
       expect.anything(),
     )
-    expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+    expect(fetchSpy).toHaveBeenCalledWith(
       expect.stringContaining('routine_id=3'),
       expect.anything(),
     )
