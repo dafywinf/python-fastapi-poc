@@ -17,12 +17,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check devcontainer.json against spec schema
+      - name: Check devcontainer configuration with Dev Container CLI
         run: |
-          pip install check-jsonschema
-          check-jsonschema \
-            --schemafile "https://raw.githubusercontent.com/devcontainers/spec/main/schemas/devContainer.schema.json" \
-            .devcontainer/devcontainer.json
+          npx -y @devcontainers/cli read-configuration --workspace-folder .
 
   build:
     name: Build devcontainer image
