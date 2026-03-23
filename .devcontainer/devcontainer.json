@@ -23,7 +23,8 @@
     "COLORTERM": "${localEnv:COLORTERM}",
     "BRAINSTORM_PORT": "${localEnv:BRAINSTORM_PORT:19452}",
     "BRAINSTORM_HOST": "0.0.0.0",
-    "BRAINSTORM_URL_HOST": "localhost"
+    "BRAINSTORM_URL_HOST": "localhost",
+    "POETRY_VIRTUALENVS_IN_PROJECT": "false"
   },
   "containerEnv": {
     "DEVCONTAINER_WORKSPACE": "${localWorkspaceFolder}",
@@ -51,7 +52,7 @@
     }
   },
   "runArgs": ["--group-add=0", "--cap-add=NET_ADMIN", "--cap-add=NET_RAW"],
-  "postCreateCommand": "poetry config virtualenvs.in-project true && poetry install",
+  "postCreateCommand": "poetry install",
   "forwardPorts": [19452],
   "portsAttributes": {
     "19452": {

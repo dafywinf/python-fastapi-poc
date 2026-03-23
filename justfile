@@ -206,6 +206,7 @@ dev-shell *args:
         -e SSH_AUTH_SOCK=/tmp/ssh-agent.sock
         -e COLORTERM="${COLORTERM:-}"
         -e DEVCONTAINER_WORKSPACE="$(pwd)"
+        -e POETRY_VIRTUALENVS_IN_PROJECT=false
     )
     # Firewalled mode: iptables egress filter + run as root then drop privileges via gosu
     # Normal mode: run directly as host UID (no firewall, no caps)
