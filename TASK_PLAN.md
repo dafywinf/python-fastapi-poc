@@ -77,3 +77,18 @@
 - [x] Navbar auth state (Sign in / Logout / user email)
 - [x] Sequences page conditional edit UI (Create, Edit, Delete gated on `isAuthenticated`)
 - [x] Tests: backend unit tests, Vitest component tests, Playwright E2E auth flow and users page
+
+---
+
+## Phase 6: Security Hardening ✅
+
+**Goal:** Harden authentication with industry-standard security controls.
+
+- [x] **Rate Limiting:** `slowapi` limiter module registered on the app
+- [x] **Extra Claims + JTI:** Allowlist for extra JWT claims, `jti` field, HttpOnly cookie extractor, fail-closed revocation
+- [x] **PKCE (S256):** Google OAuth flow with PKCE, structured observability logs
+- [x] **HttpOnly Cookie Auth:** JWT delivered via HttpOnly cookie; refresh token rotation; logout endpoint
+- [x] **Startup Guards:** Redis health check, HTTPS enforcement, CORS, `ProxyHeadersMiddleware`
+- [x] **Frontend:** Removed `localStorage` token handling, switched to cookie-based auth
+- [x] **Tests:** Cookie auth, PKCE, revocation, refresh/logout, rate limiting, startup tests
+- [x] **Tooling:** Justfile uses dynamic `poetry env` path — no cross-platform `.venv` issue

@@ -3,11 +3,12 @@
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from backend.config import settings
 from backend.exceptions import handle_exception
+from backend.rate_limiter import limiter
 from backend.schemas import TokenResponse
 from backend.security import create_access_token, verify_password
 
@@ -17,8 +18,10 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/token", response_model=TokenResponse)
+@limiter.limit("10/minute")  # pyright: ignore[reportUnknownMemberType]
 @handle_exception(logger)
 def login_for_access_token(
+    request: Request,
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
 ) -> TokenResponse:
     """Issue a JWT access token for valid admin credentials.

@@ -1,4 +1,4 @@
-venv        := ".venv/bin"
+venv        := `poetry env info --executable | xargs dirname`
 backend_log := "/tmp/backend.log"
 frontend_log := "/tmp/frontend.log"
 

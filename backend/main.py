@@ -5,13 +5,21 @@ import logging.config
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
+import redis as redis_lib
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from prometheus_fastapi_instrumentator import Instrumentator
 from pythonjsonlogger.json import JsonFormatter
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from sqlalchemy import select
+from starlette.requests import Request
+from starlette.responses import Response
 
 from backend.config import settings
 from backend.exceptions import handle_exception
+from backend.rate_limiter import limiter
+from backend.redis_client import get_redis
 from backend.routine_routes import (
     actions_router,
     executions_router,
@@ -63,7 +71,43 @@ if settings.loki_url is not None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # type: ignore[type-arg]
-    """Start APScheduler on startup if enabled; shut it down on exit."""
+    """Start APScheduler on startup if enabled; shut it down on exit.
+
+    Also runs startup checks: Redis health ping and HTTPS URL enforcement.
+    """
+    # --- Redis health check (fail fast on boot) ---
+    try:
+        get_redis().ping()  # pyright: ignore[reportUnknownMemberType]
+    except redis_lib.RedisError as err:
+        logger.critical(
+            "Redis health check failed at startup",
+            extra={
+                "event": "redis.health.failed",
+                "redis_url": settings.redis_url,
+                "error": str(err),
+            },
+        )
+        raise
+
+    # --- Admin password hash validation ---
+    if settings.enable_password_auth:
+        if not settings.admin_password_hash.startswith(("$2b$", "$2a$")):
+            raise RuntimeError(
+                "enable_password_auth=True requires ADMIN_PASSWORD_HASH to be a "
+                "valid bcrypt hash (must start with $2b$ or $2a$). "
+                'Run: python -c "import bcrypt; print('
+                "bcrypt.hashpw(b'yourpassword', bcrypt.gensalt()).decode())\""
+            )
+
+    # --- HTTPS enforcement ---
+    if settings.enforce_https:
+        for field in ("backend_url", "frontend_url"):
+            url = getattr(settings, field)
+            if not url.startswith("https://"):
+                raise RuntimeError(
+                    f"{field} must use HTTPS when enforce_https=True. Got: {url!r}"
+                )
+
     if settings.scheduler_enabled:
         from backend.database import SessionLocal
         from backend.models import Routine
@@ -97,6 +141,50 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+if settings.trusted_proxy_ips:
+    from uvicorn.middleware.proxy_headers import (  # pyright: ignore[reportMissingImports]
+        ProxyHeadersMiddleware,  # pyright: ignore[reportUnknownVariableType]
+    )
+
+    app.add_middleware(
+        ProxyHeadersMiddleware,  # type: ignore[arg-type]
+        trusted_hosts=settings.trusted_proxy_ips,
+    )
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[settings.frontend_url],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.state.limiter = limiter
+
+
+async def _rate_limit_handler(request: Request, exc: Exception) -> Response:
+    """Handle rate limit exceeded errors.
+
+    NOTE: Must be async because ``_rate_limit_exceeded_handler`` from slowapi is
+    an async callable. This is an intentional exception to the project's
+    sync-first rule.
+
+    Args:
+        request: The Starlette Request object.
+        exc: The RateLimitExceeded exception.
+
+    Returns:
+        The response from slowapi's default 429 handler.
+    """
+    logger.warning(
+        "Rate limit exceeded",
+        extra={"event": "api.rate_limit.exceeded", "path": request.url.path},
+    )
+    return _rate_limit_exceeded_handler(request, exc)  # type: ignore[arg-type]
+
+
+app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
 
 Instrumentator().instrument(app).expose(app)  # pyright: ignore[reportUnknownMemberType]
 

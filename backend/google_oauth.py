@@ -7,8 +7,14 @@ architecture.
 State management uses Redis (via :mod:`backend.redis_client`) with SETEX for
 atomic write-with-TTL and GETDEL for atomic read-and-delete. This prevents
 replay attacks and is safe under multi-worker deployments.
+
+PKCE (RFC 7636) is implemented using the S256 challenge method. The code
+verifier is stored in Redis alongside the state token and consumed atomically
+during the callback. This prevents authorization code interception attacks.
 """
 
+import base64
+import hashlib
 import logging
 import secrets
 from dataclasses import dataclass
@@ -32,6 +38,7 @@ _GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 _GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
 
 STATE_TTL_SECONDS: int = 600  # 10 minutes — must not exceed this value
+_PKCE_VERIFIER_PREFIX = "oauth:pkce:"
 
 
 # ---------------------------------------------------------------------------
@@ -54,35 +61,53 @@ class GoogleUserInfo:
 # ---------------------------------------------------------------------------
 
 
-def generate_state() -> str:
-    """Generate a cryptographically random CSRF state token and store it in Redis.
+def generate_state() -> tuple[str, str]:
+    """Generate a CSRF state token and PKCE code verifier, storing both in Redis.
 
-    The token is stored with a TTL of :data:`STATE_TTL_SECONDS`. Tokens are
-    consumed atomically by :func:`validate_and_consume_state` — replay is
-    impossible even under concurrent load.
+    The state token is stored under ``oauth:state:{state}`` and the PKCE code
+    verifier is stored under ``oauth:pkce:{state}``, both written atomically via
+    a single ``MULTI/EXEC`` pipeline with a TTL of :data:`STATE_TTL_SECONDS`.
+    The pipeline guarantees all-or-nothing: a mid-write crash cannot leave an
+    orphaned state key without a corresponding verifier. Tokens are consumed
+    atomically by :func:`validate_and_consume_state` and
+    :func:`consume_pkce_verifier` — replay is impossible even under concurrent
+    load.
+
+    The code verifier is generated per RFC 7636: 32 random bytes encoded as
+    base64url without padding, yielding a 43-character string.
 
     Returns:
-        A URL-safe random string used as the OAuth2 ``state`` parameter.
+        A ``(state, code_verifier)`` tuple where ``state`` is the OAuth2 CSRF
+        token and ``code_verifier`` is the PKCE verifier for the S256 challenge.
 
     Raises:
         HTTPException: 503 if Redis is unavailable.
     """
     state = secrets.token_urlsafe(32)
-    key = f"oauth:state:{state}"
+    raw = base64.urlsafe_b64encode(secrets.token_bytes(32))
+    code_verifier = raw.rstrip(b"=").decode("ascii")
+    state_key = f"oauth:state:{state}"
+    pkce_key = f"{_PKCE_VERIFIER_PREFIX}{state}"
     try:
-        get_redis().setex(key, STATE_TTL_SECONDS, "1")
+        pipe = get_redis().pipeline(transaction=True)  # pyright: ignore[reportUnknownMemberType]
+        pipe.setex(state_key, STATE_TTL_SECONDS, "1")
+        pipe.setex(pkce_key, STATE_TTL_SECONDS, code_verifier)
+        pipe.execute()
     except redis_lib.RedisError as err:
         logger.error(
-            "Redis unavailable — cannot store OAuth state. key=%s url=%s err=%s",
-            key,
-            settings.redis_url,
-            err,
+            "Redis unavailable — cannot store OAuth state",
+            extra={
+                "event": "oauth.redis.error",
+                "operation": "generate_state",
+                "redis_url": settings.redis_url,
+                "error": str(err),
+            },
         )
         raise HTTPException(
             status_code=503,
             detail="Authentication service temporarily unavailable. Please try again.",
         ) from err
-    return state
+    return state, code_verifier
 
 
 def validate_and_consume_state(state: str) -> None:
@@ -104,17 +129,61 @@ def validate_and_consume_state(state: str) -> None:
         value = get_redis().getdel(key)
     except redis_lib.RedisError as err:
         logger.error(
-            "Redis unavailable — cannot consume OAuth state. key=%s url=%s err=%s",
-            key,
-            settings.redis_url,
-            err,
+            "Redis unavailable — cannot consume OAuth state",
+            extra={
+                "event": "oauth.redis.error",
+                "operation": "validate_and_consume_state",
+                "redis_url": settings.redis_url,
+                "error": str(err),
+            },
         )
         raise HTTPException(
             status_code=503,
             detail="Authentication service temporarily unavailable. Please try again.",
         ) from err
     if value is None:
+        logger.warning(
+            "OAuth state validation failed — unknown or expired state",
+            extra={"event": "oauth.state.invalid", "state_prefix": state[:8]},
+        )
         raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
+
+
+def consume_pkce_verifier(state: str) -> str | None:
+    """Atomically retrieve and delete the PKCE code verifier for a given state.
+
+    Uses GETDEL — a single atomic Redis command that reads the key and deletes
+    it in one operation. This prevents the verifier from being reused across
+    multiple token exchange attempts.
+
+    Args:
+        state: The OAuth2 ``state`` parameter received in the callback.
+
+    Returns:
+        The code verifier string if found, or ``None`` if the state is unknown,
+        expired, or the verifier has already been consumed.
+
+    Raises:
+        HTTPException: 503 if Redis is unavailable.
+    """
+    key = f"{_PKCE_VERIFIER_PREFIX}{state}"
+    try:
+        value: str | None = get_redis().getdel(key)  # type: ignore[assignment]
+    except redis_lib.RedisError as err:
+        logger.error(
+            "Redis unavailable — cannot consume PKCE verifier",
+            extra={
+                "event": "oauth.redis.error",
+                "operation": "consume_pkce_verifier",
+                "redis_url": settings.redis_url,
+                "error": str(err),
+            },
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication service temporarily unavailable. Please try again.",
+        ) from err
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -122,17 +191,25 @@ def validate_and_consume_state(state: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def build_google_redirect_url(state: str) -> str:
+def build_google_redirect_url(state: str, code_verifier: str) -> str:
     """Construct the Google authorization URL for the OAuth2 consent screen.
+
+    Derives the S256 PKCE code challenge from ``code_verifier`` and appends
+    ``code_challenge`` and ``code_challenge_method=S256`` to the redirect URL.
+    The challenge is computed as the base64url-encoded SHA-256 hash of the
+    verifier, with padding stripped per RFC 7636 §4.2.
 
     Args:
         state: A CSRF state token (from :func:`generate_state`).
+        code_verifier: The PKCE code verifier (from :func:`generate_state`).
 
     Returns:
         A fully-qualified Google authorization URL including all required
-        query parameters.
+        query parameters and PKCE challenge.
     """
     redirect_uri = f"{settings.backend_url}/auth/google/callback"
+    digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
+    code_challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
     params = urlencode(
         {
             "client_id": settings.google_client_id,
@@ -140,16 +217,23 @@ def build_google_redirect_url(state: str) -> str:
             "scope": "openid email profile",
             "redirect_uri": redirect_uri,
             "state": state,
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
         }
     )
     return f"{_GOOGLE_AUTH_URL}?{params}"
 
 
-def exchange_code_for_tokens(code: str) -> dict[str, str]:
+def exchange_code_for_tokens(code: str, code_verifier: str) -> dict[str, str]:
     """Exchange an authorization code for Google access and ID tokens.
+
+    Includes the PKCE ``code_verifier`` in the token request body so Google
+    can verify the challenge presented during the authorization request. This
+    prevents authorization code interception attacks per RFC 7636 §4.5.
 
     Args:
         code: The authorization code received in the OAuth2 callback.
+        code_verifier: The PKCE code verifier generated during the login step.
 
     Returns:
         The JSON response body from the Google token endpoint as a dict.
@@ -167,6 +251,7 @@ def exchange_code_for_tokens(code: str) -> dict[str, str]:
                 "client_secret": settings.google_client_secret,
                 "redirect_uri": redirect_uri,
                 "grant_type": "authorization_code",
+                "code_verifier": code_verifier,
             },
         )
         response.raise_for_status()

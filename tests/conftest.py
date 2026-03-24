@@ -60,6 +60,18 @@ def _apply_allure_pyramid_labels(  # pyright: ignore[reportUnusedFunction]
     yield
 
 
+@pytest.fixture(autouse=True)
+def _disable_rate_limiting(  # pyright: ignore[reportUnusedFunction]
+) -> Generator[None, None, None]:
+    """Keep rate limiting off by default; dedicated tests can re-enable it."""
+    from backend.rate_limiter import limiter
+
+    previous_enabled = limiter.enabled
+    limiter.enabled = False
+    yield
+    limiter.enabled = previous_enabled
+
+
 @pytest.fixture(scope="session")
 def postgres_container() -> Generator[PostgresContainer, None, None]:
     """Start a PostgreSQL container for the entire test session."""
@@ -112,8 +124,11 @@ def db_session(engine: Engine) -> Generator[Session, None, None]:
 
 
 @pytest.fixture()
-def client(db_session: Session) -> Generator[TestClient, None, None]:
+def client(
+    db_session: Session, fake_redis: fakeredis.FakeRedis
+) -> Generator[TestClient, None, None]:
     """Return a TestClient with the get_session dependency overridden."""
+    del fake_redis
 
     def override_get_session() -> Generator[Session, None, None]:
         try:
@@ -137,28 +152,51 @@ def auth_token(client: TestClient) -> str:
     Returns:
         A signed JWT access token string.
     """
-    response = client.post(
-        "/auth/token",
-        data={
-            "username": settings.admin_username,
-            "password": _TEST_ADMIN_PASSWORD,
-        },
-    )
+    from backend.rate_limiter import limiter
+
+    previous_enabled = limiter.enabled
+    limiter.enabled = False
+    try:
+        response = client.post(
+            "/auth/token",
+            data={
+                "username": settings.admin_username,
+                "password": _TEST_ADMIN_PASSWORD,
+            },
+        )
+    finally:
+        limiter.enabled = previous_enabled
     assert response.status_code == 200, f"Auth failed: {response.text}"
     return str(response.json()["access_token"])
 
 
 @pytest.fixture()
 def auth_headers(auth_token: str) -> dict[str, str]:
-    """Return Authorization headers containing a valid Bearer token.
+    """Return a Bearer Authorization header for token-auth test cases."""
+    return {"Authorization": f"Bearer {auth_token}"}
+
+
+@pytest.fixture()
+def auth_client(client: TestClient, fake_redis: fakeredis.FakeRedis) -> TestClient:
+    """Return a TestClient with a valid access_token cookie pre-set.
+
+    The ``fake_redis`` parameter is required even though it is not referenced
+    directly: it ensures the FakeRedis fixture is active for the duration of
+    the test so that protected endpoints can check token revocation without
+    hitting a real Redis instance.
 
     Args:
-        auth_token: A signed JWT access token.
+        client: The base test HTTP client.
+        fake_redis: Fake Redis instance wired into the app's get_redis singleton.
 
     Returns:
-        A dict suitable for use as request headers.
+        The same :class:`TestClient` with the ``access_token`` cookie set.
     """
-    return {"Authorization": f"Bearer {auth_token}"}
+    from backend.security import create_access_token
+
+    token = create_access_token(subject="test@example.com")
+    client.cookies.set("access_token", token)
+    return client
 
 
 @pytest.fixture(scope="function")  # must be function-scoped — FakeServer is stateful

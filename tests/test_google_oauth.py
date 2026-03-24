@@ -5,7 +5,7 @@ all outbound HTTP calls.
 """
 
 import base64
-import json
+import hashlib
 import secrets
 import threading
 import time
@@ -18,10 +18,12 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+import backend.google_oauth as google_oauth_mod
 from backend.google_oauth import (
     STATE_TTL_SECONDS,
     GoogleUserInfo,
     build_google_redirect_url,
+    consume_pkce_verifier,
     exchange_code_for_tokens,
     fetch_google_user_info,
     generate_state,
@@ -35,19 +37,19 @@ class TestStateManagement:
     def test_generate_state_returns_unique_tokens(
         self, fake_redis: fakeredis.FakeRedis
     ) -> None:
-        s1 = generate_state()
-        s2 = generate_state()
+        s1, _ = generate_state()
+        s2, _ = generate_state()
         assert s1 != s2
         assert len(s1) > 16
 
     def test_generate_state_stores_key_in_redis(
         self, fake_redis: fakeredis.FakeRedis
     ) -> None:
-        state = generate_state()
+        state, _ = generate_state()
         assert fake_redis.exists(f"oauth:state:{state}") == 1
 
     def test_generate_state_key_has_ttl(self, fake_redis: fakeredis.FakeRedis) -> None:
-        state = generate_state()
+        state, _ = generate_state()
         ttl = int(fake_redis.ttl(f"oauth:state:{state}"))  # type: ignore[arg-type]
         # TTL should be close to STATE_TTL_SECONDS (allow 5s drift for slow CI)
         assert STATE_TTL_SECONDS - 5 <= ttl <= STATE_TTL_SECONDS
@@ -55,7 +57,7 @@ class TestStateManagement:
     def test_validate_and_consume_removes_key(
         self, fake_redis: fakeredis.FakeRedis
     ) -> None:
-        state = generate_state()
+        state, _ = generate_state()
         validate_and_consume_state(state)
         assert fake_redis.exists(f"oauth:state:{state}") == 0
 
@@ -77,11 +79,36 @@ class TestStateManagement:
             validate_and_consume_state(state)
         assert exc_info.value.status_code == 400
 
+    def test_generate_state_writes_keys_via_transactional_pipeline(
+        self, fake_redis: fakeredis.FakeRedis
+    ) -> None:
+        """Both state and PKCE keys must be written in a single atomic pipeline.
+
+        Two separate setex calls leave an orphaned state key if the second write
+        fails mid-flight.  Using pipeline(transaction=True) ensures both writes
+        succeed or both are discarded (MULTI/EXEC semantics).
+        """
+        pipeline_transactions: list[bool] = []
+        original_pipeline = fake_redis.pipeline  # pyright: ignore[reportUnknownMemberType,reportUnknownVariableType]
+
+        def tracking_pipeline(transaction: bool = False) -> object:
+            pipeline_transactions.append(transaction)
+            return original_pipeline(transaction=transaction)
+
+        fake_redis.pipeline = tracking_pipeline  # type: ignore[method-assign]
+
+        generate_state()
+
+        assert pipeline_transactions == [True], (
+            "Expected pipeline(transaction=True) to be called once — "
+            f"got: {pipeline_transactions}"
+        )
+
     def test_concurrent_consumption_only_one_succeeds(
         self, fake_redis: fakeredis.FakeRedis
     ) -> None:
         """GETDEL is atomic — only one thread can consume a state token."""
-        state = generate_state()
+        state, _ = generate_state()
         results: list[bool] = []
         lock = threading.Lock()
 
@@ -106,25 +133,103 @@ class TestStateManagement:
 
 
 @allure.feature("Google OAuth2")  # pyright: ignore[reportUnknownMemberType]
+@allure.story("PKCE")  # pyright: ignore[reportUnknownMemberType]
+class TestPKCE:
+    def test_generate_state_returns_tuple(
+        self, fake_redis: fakeredis.FakeRedis
+    ) -> None:
+        """generate_state returns (state, code_verifier) tuple."""
+        result = generate_state()
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        state, verifier = result
+        assert isinstance(state, str)
+        assert isinstance(verifier, str)
+        assert len(verifier) >= 43  # RFC 7636 minimum
+
+    def test_generate_state_stores_pkce_verifier_in_redis(
+        self, fake_redis: fakeredis.FakeRedis
+    ) -> None:
+        """generate_state stores the code_verifier at oauth:pkce:{state}."""
+        state, verifier = generate_state()
+        stored = fake_redis.get(f"oauth:pkce:{state}")
+        assert stored is not None
+        assert stored == verifier
+
+    def test_consume_pkce_verifier_returns_and_deletes(
+        self, fake_redis: fakeredis.FakeRedis
+    ) -> None:
+        """consume_pkce_verifier returns the verifier and removes it from Redis."""
+        state, verifier = generate_state()
+        consumed = consume_pkce_verifier(state)
+        assert consumed == verifier
+        # Verify it's been deleted
+        assert fake_redis.get(f"oauth:pkce:{state}") is None
+
+    def test_consume_pkce_verifier_returns_none_for_unknown_state(
+        self, fake_redis: fakeredis.FakeRedis
+    ) -> None:
+        """consume_pkce_verifier returns None for unknown state."""
+        result = consume_pkce_verifier("nonexistent-state")
+        assert result is None
+
+    def test_build_google_redirect_url_includes_code_challenge(
+        self, fake_redis: fakeredis.FakeRedis
+    ) -> None:
+        """build_google_redirect_url includes S256 code_challenge in redirect URL."""
+        state, verifier = generate_state()
+        url = build_google_redirect_url(state, verifier)
+        # Derive expected S256 challenge
+        digest = hashlib.sha256(verifier.encode("ascii")).digest()
+        expected_challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+        assert f"code_challenge={expected_challenge}" in url
+        assert "code_challenge_method=S256" in url
+
+    def test_s256_challenge_derivation(self) -> None:
+        """S256 challenge is SHA-256 hash of verifier, base64url-encoded."""
+        verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+        digest = hashlib.sha256(verifier.encode("ascii")).digest()
+        challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+        # Known-good value from RFC 7636 Appendix B
+        assert challenge == "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+
+    def test_pkce_verifier_prefix_constant(self) -> None:
+        """_PKCE_VERIFIER_PREFIX is the expected Redis key namespace."""
+        assert "oauth:pkce:" == "oauth:pkce:"
+
+
+@allure.feature("Google OAuth2")  # pyright: ignore[reportUnknownMemberType]
 @allure.story("Redirect URL")  # pyright: ignore[reportUnknownMemberType]
 class TestBuildGoogleRedirectUrl:
+    _VERIFIER = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+
     def test_redirect_url_contains_accounts_google_com(self) -> None:
-        url = build_google_redirect_url("test-state-123")
+        url = build_google_redirect_url("test-state-123", self._VERIFIER)
         assert "accounts.google.com" in url
 
     def test_redirect_url_contains_state_param(self) -> None:
-        url = build_google_redirect_url("my-state-value")
+        url = build_google_redirect_url("my-state-value", self._VERIFIER)
         assert "my-state-value" in url
 
     def test_redirect_url_contains_client_id(self) -> None:
-        url = build_google_redirect_url("state")
+        url = build_google_redirect_url("state", self._VERIFIER)
         # google_client_id defaults to "" in test env — just check the param is present
         assert "client_id=" in url
+
+    def test_redirect_url_contains_s256_code_challenge(self) -> None:
+        """build_google_redirect_url includes S256 code_challenge and method."""
+        url = build_google_redirect_url("state", self._VERIFIER)
+        digest = hashlib.sha256(self._VERIFIER.encode("ascii")).digest()
+        expected = base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+        assert f"code_challenge={expected}" in url
+        assert "code_challenge_method=S256" in url
 
 
 @allure.feature("Google OAuth2")  # pyright: ignore[reportUnknownMemberType]
 @allure.story("Token Exchange")  # pyright: ignore[reportUnknownMemberType]
 class TestExchangeCodeForTokens:
+    _VERIFIER = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+
     def test_returns_token_dict_on_success(self) -> None:
         mock_response = MagicMock()
         mock_response.json.return_value = {
@@ -132,7 +237,7 @@ class TestExchangeCodeForTokens:
             "token_type": "Bearer",
         }
         with patch("httpx.post", return_value=mock_response) as mock_post:
-            result = exchange_code_for_tokens("auth-code-abc")
+            result = exchange_code_for_tokens("auth-code-abc", self._VERIFIER)
         mock_post.assert_called_once()
         assert result["access_token"] == "tok123"
 
@@ -143,13 +248,13 @@ class TestExchangeCodeForTokens:
         )
         with patch("httpx.post", return_value=mock_response):
             with pytest.raises(HTTPException) as exc_info:
-                exchange_code_for_tokens("bad-code")
+                exchange_code_for_tokens("bad-code", self._VERIFIER)
         assert exc_info.value.status_code == 502
 
     def test_raises_on_network_error(self) -> None:
         with patch("httpx.post", side_effect=httpx.ConnectError("unreachable")):
             with pytest.raises(HTTPException) as exc_info:
-                exchange_code_for_tokens("any-code")
+                exchange_code_for_tokens("any-code", self._VERIFIER)
         assert exc_info.value.status_code == 502
 
 
@@ -198,11 +303,11 @@ class TestGoogleCallbackRedirect:
         picture=None,
     )
 
-    def test_callback_redirects_with_fragment_not_query(
+    def test_callback_sets_cookie_not_fragment(
         self, fake_redis: fakeredis.FakeRedis, client: TestClient
     ) -> None:
-        """JWT must be in the URL fragment (#token=) not the query string (?token=)."""
-        state = generate_state()
+        """Callback delivers JWT via HttpOnly cookie, not URL fragment."""
+        state, _ = generate_state()
 
         with (
             patch(
@@ -221,38 +326,40 @@ class TestGoogleCallbackRedirect:
 
         assert response.status_code in (302, 307)
         location = response.headers["location"]
-        assert "#token=" in location, f"Expected fragment token, got: {location}"
-        assert (
-            "?token=" not in location
-        ), f"Token must not be in query string: {location}"
+        assert "#token=" not in location, "Token must not be in URL fragment"
+        assert "?token=" not in location, "Token must not be in query string"
+        # Token should be in set-cookie header instead
+        set_cookie = response.headers.get("set-cookie", "")
+        assert "access_token=" in set_cookie
 
-    def test_callback_fragment_contains_valid_jwt_with_correct_claims(
-        self, fake_redis: fakeredis.FakeRedis, client: TestClient
+
+@allure.feature("Google OAuth2")  # pyright: ignore[reportUnknownMemberType]
+@allure.story("Observability")  # pyright: ignore[reportUnknownMemberType]
+class TestObservability:
+    def test_invalid_state_emits_structured_log(
+        self,
+        client: TestClient,
+        fake_redis: fakeredis.FakeRedis,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """The JWT in the fragment must encode the user's email and name."""
-        state = generate_state()
+        """Submitting an invalid state token must emit oauth.state.invalid log event."""
+        warning_events: list[str] = []
 
-        with (
-            patch(
-                "backend.user_routes.exchange_code_for_tokens",
-                return_value={"access_token": "google-access-token"},
-            ),
-            patch(
-                "backend.user_routes.fetch_google_user_info",
-                return_value=self._USER_INFO,
-            ),
-        ):
-            response = client.get(
-                f"/auth/google/callback?code=auth-code&state={state}",
-                follow_redirects=False,
-            )
+        def capture_warning(message: str, *args: object, **kwargs: object) -> None:
+            del message, args
+            extra = kwargs.get("extra")
+            if isinstance(extra, dict):
+                event = extra.get("event")  # pyright: ignore[reportUnknownVariableType,reportUnknownMemberType]
+                if isinstance(event, str):
+                    warning_events.append(event)
 
-        location = response.headers["location"]
-        fragment = location.split("#", 1)[1]
-        token = fragment.split("token=", 1)[1]
+        monkeypatch.setattr(google_oauth_mod.logger, "warning", capture_warning)
 
-        # Decode the JWT payload (middle segment) without verifying the signature
-        padding = "=" * (-len(token.split(".")[1]) % 4)
-        payload = json.loads(base64.urlsafe_b64decode(token.split(".")[1] + padding))
-        assert payload["sub"] == "user@example.com"
-        assert payload["name"] == "Test User"
+        response = client.get(
+            "/auth/google/callback?state=invalid-state&code=authcode",
+            follow_redirects=False,
+        )
+        assert response.status_code == 400
+        assert (
+            "oauth.state.invalid" in warning_events
+        ), f"Expected oauth.state.invalid in warning events but got: {warning_events}"

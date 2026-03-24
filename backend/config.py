@@ -28,6 +28,13 @@ class Settings(BaseSettings):
             For CI, fakeredis bypasses this URL entirely; no env var is needed.
         scheduler_enabled: When True, APScheduler starts on application startup.
             Defaults to True; set to False in tests via pytest-env.
+        enforce_https: When True, startup asserts backend_url and frontend_url use
+            https://. Defaults to False.
+        trusted_proxy_ips: List of trusted proxy IP ranges passed to
+            ProxyHeadersMiddleware. Empty list disables. Defaults to [].
+        refresh_token_expire_days: Lifetime of refresh tokens in days. Defaults to 7.
+        ratelimit_enabled: When True, slowapi rate limiter is active on the app.
+            Defaults to True. Set to False in pytest env to disable for testing.
     """
 
     database_url: str
@@ -44,6 +51,10 @@ class Settings(BaseSettings):
     enable_password_auth: bool = False
     redis_url: str = "redis://localhost:6379/0"
     scheduler_enabled: bool = True
+    enforce_https: bool = False
+    trusted_proxy_ips: list[str] = []
+    refresh_token_expire_days: int = 7
+    ratelimit_enabled: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
