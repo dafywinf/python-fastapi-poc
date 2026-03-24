@@ -26,7 +26,9 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  localStorage.clear()
+  if (typeof localStorage.clear === 'function') {
+    localStorage.clear()
+  }
   server.resetHandlers()
 })
 

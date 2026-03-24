@@ -39,14 +39,20 @@ async function withAuthedContext<T>(
 }
 
 /**
- * Obtain a JWT token and store it in the browser's localStorage so that
- * the frontend API client includes it on write requests.
+ * Obtain a JWT token and set it as the browser cookie used by the app.
  * Call this in a `beforeEach` for any test that interacts with the UI.
  */
 export async function injectAuthToken(page: Page): Promise<void> {
   const token = await getToken()
-  await page.goto('http://127.0.0.1:5173')
-  await page.evaluate((t) => localStorage.setItem('access_token', t), token)
+  await page.context().addCookies([
+    {
+      name: 'access_token',
+      value: token,
+      url: 'http://127.0.0.1:5173',
+      httpOnly: true,
+      sameSite: 'Lax',
+    },
+  ])
 }
 
 export async function createRoutine(name: string): Promise<{ id: number }> {

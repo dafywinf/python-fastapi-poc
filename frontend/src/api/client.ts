@@ -1,5 +1,3 @@
-import { useAuthStore } from '../stores/auth'
-
 export class HttpError extends Error {
   status: number
   detail?: unknown
@@ -16,20 +14,11 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
   body?: BodyInit | object | null
 }
 
-function getToken(): string | null {
-  return useAuthStore().accessToken
-}
-
 function buildHeaders(headers?: HeadersInit, hasJsonBody?: boolean): Headers {
   const finalHeaders = new Headers(headers)
-  const token = getToken()
 
   if (hasJsonBody && !finalHeaders.has('Content-Type')) {
     finalHeaders.set('Content-Type', 'application/json')
-  }
-
-  if (token && !finalHeaders.has('Authorization')) {
-    finalHeaders.set('Authorization', `Bearer ${token}`)
   }
 
   return finalHeaders
@@ -72,6 +61,7 @@ async function request<T>(
 
   const response = await fetch(url, {
     ...options,
+    credentials: 'include',
     headers: buildHeaders(options.headers, isJsonBody),
     body: requestBody,
   })

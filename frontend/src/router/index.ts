@@ -1,6 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { storeToRefs } from 'pinia'
-import { useAuthStore } from '../stores/auth'
+import { useAuth } from '../composables/useAuth'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -48,9 +47,10 @@ const router = createRouter({
   ],
 })
 
-router.beforeEach((to) => {
-  const authStore = useAuthStore()
-  const { isAuthenticated } = storeToRefs(authStore)
+router.beforeEach(async (to) => {
+  const { isAuthenticated, checkAuth } = useAuth()
+
+  await checkAuth()
 
   if (to.meta.requiresAuth && !isAuthenticated.value) {
     return { name: 'login', query: { redirect: to.fullPath } }
