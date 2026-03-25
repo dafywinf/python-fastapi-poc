@@ -85,8 +85,15 @@ settings = Settings()  # pyright: ignore[reportCallIssue]
 
 ## Testing (Pytest + Allure + Testcontainers)
 
-- **Real database only** — tests run against a real PostgreSQL container via `testcontainers`. Never use SQLite or mock the database.
-- Each test is wrapped in a transaction rolled back on teardown (`join_transaction_mode="create_savepoint"`); tests are fully isolated without truncation.
+The test suite follows the testing pyramid with two layers:
+
+- **`tests/unit/`** — No database. Tests pure logic, schemas, auth helpers, OAuth utilities. Safe to run anywhere including the devcontainer. Run with `just backend-test-fast`.
+- **`tests/integration/`** — Requires PostgreSQL via `testcontainers`. Tests endpoints, CRUD, migrations, and DB constraints. **Host only** — no Docker socket inside the devcontainer. Run with `just backend-test`.
+
+Rules:
+- **Real database for integration tests** — never SQLite, never mocked sessions for tests in `tests/integration/`.
+- Place new tests in the correct folder — no explicit marker needed, the path determines the layer.
+- Each integration test is wrapped in a transaction rolled back on teardown (`join_transaction_mode="create_savepoint"`); tests are fully isolated without truncation.
 - All test classes must be decorated with `@allure.feature` and `@allure.story` at the **class level** (applies to all methods).
 - Use `allure.step` context managers for complex multi-step assertions.
 - Performance tests live in `tests/perf/`, are marked `@pytest.mark.perf`, and are excluded from the default `pytest` run.
@@ -105,24 +112,31 @@ Run **one command** before every commit and before raising a PR:
 
 ```bash
 just ci   # ruff + basedpyright + pytest (unit/integration with allure) + perf tests + e2e tests (with allure)
-          # Precondition: just platform-up && just backend-dev must be running
 ```
+
+Preconditions for `just ci`:
+- Run on the **host** (not inside the devcontainer) — testcontainers needs Docker
+- `just platform-up` must be running (PostgreSQL, Prometheus, Grafana)
+- `just dev-up` must be running (backend + frontend — required for e2e tests)
 
 Never invoke the underlying tools (`ruff`, `basedpyright`, `pytest`) directly — use `just` so the recipes stay in sync.
 
 ## Tooling
 
-- **Dependency management:** Poetry (`poetry config virtualenvs.in-project true` — `.venv` lives inside the project).
+- **Dependency management:** Poetry. Venv location is context-dependent:
+  - **Host (macOS):** `POETRY_VIRTUALENVS_IN_PROJECT=true` → `.venv/` in project root
+  - **Devcontainer (Linux):** `POETRY_VIRTUALENVS_IN_PROJECT=false` → venv in Poetry cache, `.venv/` does NOT exist
 - **Task runner:** `just` (see `justfile` for all recipes).
 - **Static analysis:** basedpyright strict mode — zero errors required.
 
 ## Virtual Environment Execution
 
-- **Do not use `source .venv/bin/activate`** — Claude Code runs each shell command in a fresh shell, so activation does not persist between tool calls.
-- **Always invoke via `just`** or use the absolute venv path:
+Always use `just` recipes — never call `.venv/bin/pytest` or `.venv/bin/basedpyright` directly. The `.venv/` directory does not exist inside the devcontainer (venv is in Poetry cache there), so direct `.venv/bin/*` calls will fail in that context. Using `just` works correctly in both environments.
 
 ```bash
-just ci                         # preferred — runs the full pre-PR suite
-.venv/bin/pytest tests/         # fallback if running a subset directly
-.venv/bin/basedpyright .
+just ci                    # full pre-PR suite
+just backend-test          # backend tests only
+just backend-check         # lint + type check only
 ```
+
+Do not use `source .venv/bin/activate` — Claude Code runs each shell command in a fresh shell, so activation does not persist.

@@ -33,7 +33,7 @@ Never work directly on `main`.
 
 ## Workflow Rules
 
-- Before committing, always run `pytest` to ensure tests pass.
+- Before pushing, always run `just ci` on the **host** (not inside the devcontainer) to ensure all tests pass — testcontainers requires Docker which is only available on the host.
 - Use atomic commits (one logical change per commit).
 - Always include an Allure report decorator in test files.
 - **Before raising a PR, squash commits into a single logical commit.**

@@ -35,27 +35,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         aggregate \
     && rm -rf /var/lib/apt/lists/*
 
-# -- Docker CLI + Compose plugin -----------------------------------------------
-# Installs docker-ce-cli only — no daemon. Host daemon runs via socket mount.
-RUN <<'INSTALL_DOCKER'
-  set -eux
-  apt-get update
-  apt-get install -y --no-install-recommends ca-certificates curl gnupg
-  install -m 0755 -d /etc/apt/keyrings
-  curl -fsSL https://download.docker.com/linux/debian/gpg \
-    | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-  chmod a+r /etc/apt/keyrings/docker.gpg
-  echo "deb [arch=$(dpkg --print-architecture) \
-    signed-by=/etc/apt/keyrings/docker.gpg] \
-    https://download.docker.com/linux/debian \
-    $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
-    > /etc/apt/sources.list.d/docker.list
-  apt-get update
-  apt-get install -y --no-install-recommends \
-    docker-ce-cli docker-compose-plugin docker-buildx-plugin
-  rm -rf /var/lib/apt/lists/*
-INSTALL_DOCKER
-
 # -- Node.js 22 ----------------------------------------------------------------
 # renovate: datasource=node-version depName=node
 ARG NODE_MAJOR="22"
@@ -125,6 +104,8 @@ RUN sh -c "$(curl -fsSL https://github.com/deluan/zsh-in-docker/releases/downloa
     -a "source /usr/share/doc/fzf/examples/key-bindings.zsh" \
     -a "source /usr/share/doc/fzf/examples/completion.zsh" \
     -a "export PROMPT_COMMAND='history -a' && export HISTFILE=/commandhistory/.zsh_history" \
+    -a "echo '\033[1;33m[DEVCONTAINER] No Docker. Run: just container-ci (lint + type check + unit tests)\033[0m'" \
+    -a "echo '\033[1;31m[DEVCONTAINER] Never run: just backend-test | just ci | just backend-perf | just backend-e2e | just frontend-e2e | docker\033[0m'" \
     -x
 
 # -- Claude Code (native binary, auto-updates) ---------------------------------

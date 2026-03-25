@@ -6,6 +6,11 @@ api.anthropic.com
 statsig.anthropic.com
 sentry.io
 
+# Claude Code OAuth (login flow)
+claude.ai
+platform.claude.com
+auth.anthropic.com
+
 # Claude Code distribution (always GitHub, regardless of project forge)
 github.com
 api.github.com
@@ -16,11 +21,6 @@ files.pythonhosted.org
 
 # npm registry (Claude Code runs `npm install` for MCP servers at runtime)
 registry.npmjs.org
-
-# Docker Hub registry (Testcontainers pulls postgres, redis, etc.)
-registry-1.docker.io
-auth.docker.io
-production.cloudflare.docker.com
 
 # VS Code remote server + extension marketplace
 marketplace.visualstudio.com

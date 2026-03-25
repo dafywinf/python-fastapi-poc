@@ -22,12 +22,13 @@ async function getToken(): Promise<string> {
 
 async function withAuthedContext<T>(
   callback: (context: Awaited<ReturnType<typeof pwRequest.newContext>>) => Promise<T>,
+  token?: string,
 ): Promise<T> {
-  const token = await getToken()
+  const resolvedToken = token ?? (await getToken())
   const context = await pwRequest.newContext({
     baseURL: BASE_API,
     extraHTTPHeaders: {
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${resolvedToken}`,
     },
   })
 
@@ -40,9 +41,10 @@ async function withAuthedContext<T>(
 
 /**
  * Obtain a JWT token and set it as the browser cookie used by the app.
+ * Returns the token so callers can reuse it (e.g. for API cleanup calls).
  * Call this in a `beforeEach` for any test that interacts with the UI.
  */
-export async function injectAuthToken(page: Page): Promise<void> {
+export async function injectAuthToken(page: Page): Promise<string> {
   const token = await getToken()
   await page.context().addCookies([
     {
@@ -53,9 +55,10 @@ export async function injectAuthToken(page: Page): Promise<void> {
       sameSite: 'Lax',
     },
   ])
+  return token
 }
 
-export async function createRoutine(name: string): Promise<{ id: number }> {
+export async function createRoutine(name: string, token?: string): Promise<{ id: number }> {
   return withAuthedContext(async (context) => {
     const response = await context.post('/routines/', {
       data: {
@@ -66,16 +69,27 @@ export async function createRoutine(name: string): Promise<{ id: number }> {
       },
     })
     return (await response.json()) as { id: number }
-  })
+  }, token)
+}
+
+export async function deleteRoutinesByName(name: string, token?: string): Promise<void> {
+  await withAuthedContext(async (context) => {
+    const res = await context.get('/routines/')
+    const routines = (await res.json()) as { id: number; name: string }[]
+    for (const r of routines.filter((r) => r.name === name)) {
+      await context.delete(`/routines/${r.id}`)
+    }
+  }, token)
 }
 
 export async function createAction(
   routineId: number,
   payload: { action_type: 'echo' | 'sleep'; config: Record<string, unknown> },
+  token?: string,
 ): Promise<void> {
   await withAuthedContext(async (context) => {
     await context.post(`/routines/${routineId}/actions`, {
       data: payload,
     })
-  })
+  }, token)
 }
