@@ -55,9 +55,13 @@ backend-check:
     {{venv}}/ruff format --check .
     {{venv}}/basedpyright .
 
-# Run the backend integration test suite (writes Allure results)
+# Run unit tests only — no database required, safe inside the devcontainer
+backend-test-fast:
+    {{venv}}/pytest tests/unit/ --alluredir=allure-results --clean-alluredir
+
+# Run the full backend test suite (unit + integration) — requires Docker for testcontainers, run on host only
 backend-test:
-    {{venv}}/pytest --alluredir=allure-results
+    {{venv}}/pytest --alluredir=allure-results --clean-alluredir
 
 # Run backend tests and open the Allure report in a browser
 backend-test-report: backend-test
@@ -69,15 +73,15 @@ backend-test-cov:
 
 # Run performance/timing tests (writes Allure results)
 backend-perf:
-    {{venv}}/pytest tests/perf/ -v -s -m perf --alluredir=allure-results
+    {{venv}}/pytest tests/perf/ -v -s -m perf --alluredir=allure-results-perf --clean-alluredir
 
 # Run performance/timing tests and open the Allure report in a browser
 backend-perf-report: backend-perf
-    allure serve allure-results
+    allure serve allure-results-perf
 
 # Run end-to-end tests against the live stack (requires platform-up + backend-dev)
 backend-e2e:
-    {{venv}}/pytest tests/e2e/ -v -s -m e2e --alluredir=allure-results
+    {{venv}}/pytest tests/e2e/ -v -s -m e2e --alluredir=allure-results-e2e --clean-alluredir
 
 # Apply all pending database migrations
 migrate:
@@ -127,12 +131,12 @@ frontend-e2e-report: frontend-e2e
 
 # Delete all Allure results so the next report contains only fresh test runs
 clean-reports:
-    rm -rf allure-results frontend/allure-results frontend/allure-results-e2e
+    rm -rf allure-results allure-results-perf allure-results-e2e frontend/allure-results frontend/allure-results-e2e
 
 # Run all tests (backend + frontend) then open a combined Allure report
 # Requires: just platform-up && just dev-up
 report: clean-reports ci
-    allure serve allure-results frontend/allure-results frontend/allure-results-e2e
+    allure serve allure-results allure-results-perf allure-results-e2e frontend/allure-results frontend/allure-results-e2e
 
 # ── Platform ─────────────────────────────────────────────────────────────────
 
@@ -184,6 +188,10 @@ bootstrap: db-up
 
 # ── CI ───────────────────────────────────────────────────────────────────────
 
+# Devcontainer-safe check: everything that runs without Docker (lint + type check + unit tests)
+# Safe to run inside the devcontainer. Does NOT require Docker or platform-up.
+container-ci: backend-check frontend-check backend-test-fast frontend-test
+
 # Full pre-PR gate: backend checks + all tests + frontend check + frontend tests + playwright e2e
 # Requires: just platform-up && just dev-up running in another terminal
 ci: backend-check frontend-check backend-test backend-perf backend-e2e frontend-test frontend-e2e
@@ -229,21 +237,6 @@ dev-shell *args:
         -v "$HOME/.claude:$HOME/.claude"
     )
     [[ -f "$HOME/.claude.json" ]] && run_args+=(-v "$HOME/.claude.json:/tmp/home/.claude.json")
-    # Docker socket — detect location (Linux: /var/run/docker.sock, macOS Docker Desktop: ~/.docker/run/docker.sock)
-    # On macOS, the socket appears as GID 0 (root) inside Linux containers regardless of host ownership.
-    # On Linux, read the actual socket GID from the host path.
-    docker_sock=""
-    [[ -S /var/run/docker.sock ]] && docker_sock=/var/run/docker.sock
-    [[ -z "$docker_sock" && -S "$HOME/.docker/run/docker.sock" ]] && docker_sock="$HOME/.docker/run/docker.sock"
-    if [[ -n "$docker_sock" ]]; then
-        run_args+=(-v "$docker_sock:/var/run/docker.sock")
-        if [[ "$(uname -s)" = "Darwin" ]]; then
-            sock_gid=0
-        else
-            sock_gid=$(stat -c '%g' "$docker_sock")
-        fi
-        run_args+=(--group-add "$sock_gid")
-    fi
     # Superpowers brainstorming visual companion port
     run_args+=(-p "{{ BRAINSTORM_PORT }}:{{ BRAINSTORM_PORT }}")
     run_args+=(-e "BRAINSTORM_PORT={{ BRAINSTORM_PORT }}")

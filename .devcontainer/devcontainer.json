@@ -1,11 +1,12 @@
 {
   "name": "python-fastapi-poc",
-  "build": { "dockerfile": "Dockerfile" },
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "devcontainer",
+  "shutdownAction": "stopCompose",
   "init": true,
   "remoteUser": "dev",
   "updateRemoteUserUID": true,
-  "workspaceFolder": "${localWorkspaceFolder}",
-  "workspaceMount": "source=${localWorkspaceFolder},target=${localWorkspaceFolder},type=bind",
+  "workspaceFolder": "/workspace",
   "mounts": [
     "source=${localEnv:HOME}/.config/gh,target=/tmp/gh-config,type=bind",
     "source=${localEnv:HOME}/.gitconfig,target=/tmp/home/.gitconfig,type=bind,readonly",
@@ -13,7 +14,6 @@
     "source=${localEnv:HOME}/.claude,target=${localEnv:HOME}/.claude,type=bind",
     "source=${localEnv:HOME}/.claude.json,target=/tmp/home/.claude.json,type=bind",
     "source=/run/host-services/ssh-auth.sock,target=/run/host-services/ssh-auth.sock,type=bind",
-    "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind",
     "source=python-fastapi-poc-history,target=/commandhistory,type=volume",
     "source=codex-config-${devcontainerId},target=/tmp/home/.codex,type=volume"
   ],
@@ -27,6 +27,7 @@
     "POETRY_VIRTUALENVS_IN_PROJECT": "false"
   },
   "containerEnv": {
+    "DEVCONTAINER": "true",
     "DEVCONTAINER_WORKSPACE": "${localWorkspaceFolder}",
     "NODE_OPTIONS": "--max-old-space-size=4096",
     "CODEX_HOME": "/tmp/home/.codex",
@@ -51,8 +52,11 @@
       }
     }
   },
-  "runArgs": ["--group-add=0", "--cap-add=NET_ADMIN", "--cap-add=NET_RAW"],
-  "postCreateCommand": "poetry install",
+  "runArgs": [],
+  "postStartCommand": {
+    "poetry": "poetry install",
+    "claude": "claude update"
+  },
   "forwardPorts": [19452],
   "portsAttributes": {
     "19452": {

@@ -18,7 +18,7 @@
     </div>
 
     <!-- ── Panel 1: Configured Routines ───────────────────────────────────── -->
-    <div class="border border-slate-200 rounded-lg overflow-hidden">
+    <div data-testid="routines-table" class="border border-slate-200 rounded-lg overflow-hidden">
       <DataTable :value="routines" :loading="loadingRoutines">
         <Column field="name" header="Name">
           <template #body="{ data }">

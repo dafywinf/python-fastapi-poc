@@ -22,6 +22,6 @@ export class RoutinesPage {
   }
 
   row(name: string): Locator {
-    return this.page.getByRole('row').filter({ hasText: name })
+    return this.page.getByTestId('routines-table').getByRole('row').filter({ hasText: name })
   }
 }

@@ -1,14 +1,18 @@
 import { test, expect } from '@playwright/test'
 import { allure } from 'allure-playwright'
 import { applyFrontendE2EAllureLabels } from './helpers/allure'
-import { createAction, createRoutine, injectAuthToken } from './helpers/api'
+import { createAction, createRoutine, deleteRoutinesByName, injectAuthToken } from './helpers/api'
 import { RoutinesPage } from './pages/RoutinesPage'
 
 test.describe('Routines', () => {
+  let token: string
+
   test.beforeEach(async ({ page }) => {
     await applyFrontendE2EAllureLabels('Browser E2E', 'top')
     await allure.feature('Routines UI')
-    await injectAuthToken(page)
+    token = await injectAuthToken(page)
+    await deleteRoutinesByName('E2E Test Routine', token)
+    await deleteRoutinesByName('E2E Run Routine', token)
   })
 
   test('home page loads with three panels', async ({ page }) => {
@@ -50,11 +54,11 @@ test.describe('Routines', () => {
     page,
   }) => {
     await allure.story('Execution')
-    const routine = await createRoutine('E2E Run Routine')
+    const routine = await createRoutine('E2E Run Routine', token)
     await createAction(routine.id, {
       action_type: 'echo',
       config: { message: 'hello from e2e' },
-    })
+    }, token)
 
     const routinesPage = new RoutinesPage(page)
     await routinesPage.goto()

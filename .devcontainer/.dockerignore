@@ -1,0 +1,16 @@
+# Build context for the devcontainer image is .devcontainer/ (not the project root),
+# so the project source tree is never sent to the Docker daemon.
+#
+# Exclude anything that should not influence the image layer cache or be copied
+# into the build context.
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Any local overrides or secrets accidentally placed here
+*.env
+*.local

@@ -11,8 +11,6 @@ NOT included in the standard `just test` suite — these tests spin up a Docker
 container, bind real ports, and take several seconds intentionally.
 """
 
-import os
-import pathlib
 from collections.abc import Generator
 
 import allure
@@ -76,10 +74,6 @@ async def async_blocking_db_handler(  # noqa: E501
 @pytest.fixture(scope="module")
 def pg_container():
     """Spin up a dedicated PostgreSQL container for the perf suite."""
-    _docker_sock = pathlib.Path.home() / ".docker/run/docker.sock"
-    if _docker_sock.exists() and not os.environ.get("DOCKER_HOST"):
-        os.environ["DOCKER_HOST"] = f"unix://{_docker_sock}"
-
     with PostgresContainer("postgres:16-alpine") as container:
         yield container
 

@@ -1,0 +1,11 @@
+services:
+  devcontainer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # sleep infinity keeps the container alive when the IDE doesn't manage the lifecycle
+    command: sleep infinity
+    volumes:
+      # Mount project root at /workspace (compose-based devcontainers require workspace
+      # volume here; workspaceMount in devcontainer.json is ignored when using compose)
+      - ..:/workspace:cached
