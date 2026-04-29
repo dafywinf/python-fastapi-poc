@@ -1,3 +1,5 @@
+import { clearAuth } from '../composables/useAuth'
+
 export class HttpError extends Error {
   status: number
   detail?: unknown
@@ -67,6 +69,11 @@ async function request<T>(
   })
 
   if (!response.ok) {
+    if (response.status === 401 && !window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/auth')) {
+      clearAuth()
+      const redirect = window.location.pathname + window.location.search
+      window.location.href = `/login?redirect=${encodeURIComponent(redirect)}`
+    }
     return parseError(response)
   }
 
@@ -90,6 +97,13 @@ export const apiClient = {
   },
   put<T>(url: string, body?: RequestOptions['body'], options?: RequestOptions) {
     return request<T>(url, { ...options, method: 'PUT', body })
+  },
+  patch<T>(
+    url: string,
+    body?: RequestOptions['body'],
+    options?: RequestOptions,
+  ) {
+    return request<T>(url, { ...options, method: 'PATCH', body })
   },
   delete<T>(url: string, options?: RequestOptions) {
     return request<T>(url, { ...options, method: 'DELETE' })

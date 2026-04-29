@@ -1,14 +1,12 @@
 import { http, HttpResponse } from 'msw'
 import type { components, paths } from '../../api/generated/schema'
+import type { Page } from '../../types/routine'
 
 type ListUsersResponse =
   paths['/users/']['get']['responses']['200']['content']['application/json']
-type ListRoutinesResponse =
-  paths['/routines/']['get']['responses']['200']['content']['application/json']
 type RoutineResponse = components['schemas']['RoutineResponse']
 type RunResponse = components['schemas']['RunResponse']
-type ListExecutionsResponse =
-  paths['/executions/history']['get']['responses']['200']['content']['application/json']
+type ExecutionResponse = components['schemas']['ExecutionResponse']
 type ActiveExecutionsResponse =
   paths['/executions/active']['get']['responses']['200']['content']['application/json']
 type TokenResponse = components['schemas']['TokenResponse']
@@ -28,8 +26,14 @@ export const usersHandlers = {
 }
 
 export const routinesHandlers = {
-  list(routines: ListRoutinesResponse = []) {
-    return http.get('/routines/', () => HttpResponse.json(routines))
+  list(routines: RoutineResponse[] = []) {
+    const page: Page<RoutineResponse> = {
+      items: routines,
+      total: routines.length,
+      limit: 25,
+      offset: 0,
+    }
+    return http.get('/routines/', () => HttpResponse.json(page))
   },
 
   listError(status = 500, detail = 'Failed to load routines') {
@@ -51,8 +55,19 @@ export const routinesHandlers = {
     return http.get('/routines/:routineId', () => HttpResponse.json(routine))
   },
 
+  getError(status = 404, detail = 'Not found') {
+    return http.get('/routines/:routineId', () => HttpResponse.json({ detail }, { status }))
+  },
+
   delete() {
     return http.delete('/routines/:routineId', () => new HttpResponse(null, { status: 204 }))
+  },
+
+  update(routine: RoutineResponse) {
+    return http.patch('/routines/:routineId', async ({ request }) => {
+      await request.json()
+      return HttpResponse.json(routine)
+    })
   },
 
   runNow(response: RunResponse) {
@@ -69,8 +84,14 @@ export const routinesHandlers = {
     return http.get('/executions/active', () => new Promise(() => {}))
   },
 
-  executionHistory(executions: ListExecutionsResponse = []) {
-    return http.get('/executions/history', () => HttpResponse.json(executions))
+  executionHistory(executions: ExecutionResponse[] = []) {
+    const page: Page<ExecutionResponse> = {
+      items: executions,
+      total: executions.length,
+      limit: 25,
+      offset: 0,
+    }
+    return http.get('/executions/history', () => HttpResponse.json(page))
   },
 
   executionHistoryPending() {

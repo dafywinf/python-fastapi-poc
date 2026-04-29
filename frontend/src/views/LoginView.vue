@@ -4,9 +4,9 @@
     class="flex items-center justify-center min-h-[70vh]"
   >
     <div
-      class="w-full max-w-sm border border-slate-200 rounded-xl p-8 shadow-sm bg-white"
+      class="w-full max-w-sm border border-app-border rounded-xl p-8 shadow-sm bg-app-card"
     >
-      <h1 class="text-xl font-semibold text-slate-900 mb-6 text-center">
+      <h1 class="text-xl font-semibold text-app-text mb-6 text-center">
         Sign in
       </h1>
       <div class="flex flex-col gap-4">

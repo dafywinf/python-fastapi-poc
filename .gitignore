@@ -17,6 +17,7 @@ htmlcov/
 
 # Allure (generated output — use `just test-report` / `just perf-report` locally)
 allure-results/
+allure-results-*/
 allure-report/
 allure-report-*/
 
@@ -45,4 +46,7 @@ frontend/allure-results-e2e/
 frontend/allure-report/
 frontend/allure-report-*/
 frontend/test-results/
+frontend/playwright/.cache/
 .worktrees/
+
+stitch_bae_defense_operations_portal/

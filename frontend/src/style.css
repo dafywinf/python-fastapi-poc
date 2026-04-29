@@ -1,5 +1,82 @@
 @import 'tailwindcss';
 
+/*
+ * ── Operations Control Design Tokens ────────────────────────────────────────────────
+ *
+ * Single source of truth for all brand values (Tailwind v4 @theme).
+ * Every token here generates a full set of Tailwind utilities automatically:
+ *   --color-app-red  →  bg-app-red / text-app-red / border-app-red / ring-app-red / …
+ *   --font-sans      →  font-sans (body), overrides Tailwind default
+ *   --font-data      →  font-data (monospace for IDs, timestamps, code)
+ *
+ * DARK MODE: surface tokens (app-surface / app-card / app-border / app-text)
+ * are redefined under [data-theme="dark"] below. Brand accent colours
+ * (app-red, app-teal, app-amber) are invariant — they stay vivid on both themes.
+ *
+ * To rebrand: edit this block only. Nothing else needs to change.
+ *
+ * Typefaces
+ * ─────────
+ * Source Sans 3  — humanist sans-serif, clean and legible. Variable font, wght 200–900.
+ *                  Utility: font-sans (body) — applied to <body> automatically.
+ *
+ * JetBrains Mono — monospaced, used for IDs / serial numbers / timestamps.
+ *                  Utility: font-data
+ */
+@theme {
+  /* ── Typefaces ─────────────────────────────────────────────────────────── */
+  --font-sans: 'Source Sans 3', ui-sans-serif, system-ui, sans-serif;
+  --font-data: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* ── Brand accents (theme-invariant) ──────────────────────────────────── */
+  --color-app-red:   #E2001A;   /* primary action, brand mark         */
+  --color-app-teal:  #63D7E0;   /* secondary / data accent            */
+  --color-app-amber: #FDBB28;   /* warning / running state            */
+
+  /* ── Shell (always dark — navbar + sidebar never invert) ─────────────── */
+  --color-app-dark: #0E1013;
+
+  /* ── Adaptive surfaces (light defaults; overridden in [data-theme=dark]) */
+  --color-app-surface: #F4F5F7; /* page background                    */
+  --color-app-card:    #FFFFFF; /* card / table surface               */
+  --color-app-border:  #E5E7EB; /* dividers                           */
+  --color-app-text:    #1A1A1A; /* body copy                          */
+  --color-app-muted:   #6B7280; /* secondary / placeholder text       */
+}
+
+/*
+ * ── Dark mode ────────────────────────────────────────────────────────────────
+ * Redefines the adaptive surface tokens under [data-theme="dark"].
+ * Because Tailwind v4 utilities reference the CSS custom properties at
+ * render time, bg-app-surface / bg-app-card / text-app-text etc. respond
+ * automatically — no dark: prefix needed in templates for surface colours.
+ *
+ * Palette: near-black environment (#0A0B0E base), tonal card layers, high-contrast white text.
+ */
+[data-theme='dark'] {
+  --color-app-surface: #0A0B0E;
+  --color-app-card:    #14181D;
+  --color-app-border:  rgba(255, 255, 255, 0.08);
+  --color-app-text:    #E5E2E1;
+  --color-app-muted:   #6B7280;
+}
+
+/* ── Material Symbols ────────────────────────────────────────────────────── */
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  font-family: 'Material Symbols Outlined';
+  font-style: normal;
+  display: inline-block;
+  line-height: 1;
+  text-transform: none;
+  letter-spacing: normal;
+  word-wrap: normal;
+  white-space: nowrap;
+  direction: ltr;
+  user-select: none;
+}
+
+/* ── Reset ───────────────────────────────────────────────────────────────── */
 *,
 *::before,
 *::after {
@@ -8,18 +85,13 @@
 
 body {
   margin: 0;
-  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
-  font-size: 16px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 400;
   line-height: 1.5;
-  color: #1e293b;
-  background: #f8fafc;
+  color: var(--color-app-text);
+  background-color: var(--color-app-surface);
   -webkit-font-smoothing: antialiased;
-}
-
-@layer base {
-  body {
-    background-color: #f8fafc; /* bg-slate-50 */
-    color: #0f172a; /* text-slate-900 */
-    font-family: ui-sans-serif, system-ui, sans-serif; /* font-sans */
-  }
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }

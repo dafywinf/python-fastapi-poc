@@ -32,7 +32,7 @@ test.describe('Auth UI', () => {
     await injectAuthToken(page)
     await page.goto(`${FRONTEND_URL}/routines`)
     await expect(page.getByTestId('user-email')).toContainText('admin')
-    await expect(page.getByText('Logout')).toBeVisible()
+    await expect(page.getByText('Sign Out')).toBeVisible()
   })
 
   test('authenticated user sees New Routine button on routines page', async ({
@@ -60,7 +60,7 @@ test.describe('Auth UI', () => {
     await allure.story('Logout')
     await injectAuthToken(page)
     await page.goto(`${FRONTEND_URL}/routines`)
-    await page.getByText('Logout').click()
+    await page.getByText('Sign Out').click()
     await expect(page.getByText('Sign in with Google')).toBeVisible()
   })
 })

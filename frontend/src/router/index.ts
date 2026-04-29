@@ -4,7 +4,12 @@ import { useAuth } from '../composables/useAuth'
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/', redirect: '/routines' },
+    {
+      path: '/',
+      name: 'dashboard',
+      component: () => import('../views/DashboardView.vue'),
+      meta: { requiresAuth: true },
+    },
     {
       path: '/login',
       name: 'login',
@@ -26,12 +31,20 @@ const router = createRouter({
       path: '/routines',
       name: 'routines',
       component: () => import('../views/RoutinesView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/routines/new',
+      name: 'routine-create',
+      component: () => import('../views/RoutineFormView.vue'),
+      meta: { requiresAuth: true },
     },
     {
       path: '/routines/:id',
       name: 'routine-detail',
       component: () => import('../views/RoutineDetailView.vue'),
       props: (route) => ({ id: Number(route.params.id) }),
+      meta: { requiresAuth: true },
       beforeEnter: (to) => {
         if (isNaN(Number(to.params.id))) {
           console.warn('Invalid route: id is not a number:', to.params.id)
@@ -40,9 +53,27 @@ const router = createRouter({
       },
     },
     {
+      path: '/routines/:id/edit',
+      name: 'routine-edit',
+      component: () => import('../views/RoutineFormView.vue'),
+      props: (route) => ({ id: Number(route.params.id) }),
+      meta: { requiresAuth: true },
+      beforeEnter: (to) => {
+        if (isNaN(Number(to.params.id))) {
+          console.warn('Invalid route: id is not a number:', to.params.id)
+          return { name: 'routines' }
+        }
+      },
+    },
+    {
+      path: '/executing',
+      redirect: '/',
+    },
+    {
       path: '/history',
       name: 'history',
       component: () => import('../views/ExecutionHistoryView.vue'),
+      meta: { requiresAuth: true },
     },
   ],
 })
@@ -57,7 +88,7 @@ router.beforeEach(async (to) => {
   }
 
   if (to.meta.publicOnly && isAuthenticated.value) {
-    return { name: 'routines' }
+    return { name: 'dashboard' }
   }
 
   return true

@@ -34,15 +34,29 @@ integration tests.
 
 ## Layer Reference
 
-### Backend — Unit / Integration
+### Backend — Unit
+
+| | |
+|---|---|
+| **Runner** | pytest |
+| **Environment** | No database. Pure Python logic only. |
+| **Location** | `tests/unit/` |
+| **Run** | `just backend-test-fast` |
+| **Allure results** | `allure-results/` → CI artifact `allure-results-backend` |
+
+**Safe to run anywhere** — devcontainer, host, CI. No Docker required.
+
+---
+
+### Backend — Integration
 
 | | |
 |---|---|
 | **Runner** | pytest |
 | **Environment** | Real PostgreSQL container (testcontainers, spun up per session) |
-| **Location** | `tests/test_health.py`, `tests/test_metrics.py`, `tests/test_routines.py`, `tests/test_google_oauth.py` |
-| **Run** | `just backend-test` |
-| **Allure results** | `allure-results/` → CI artifact `allure-results-e2e` |
+| **Location** | `tests/integration/` |
+| **Run** | `just backend-test` (host only) |
+| **Allure results** | `allure-results/` → CI artifact `allure-results-backend` |
 
 **What it proves:** Every API endpoint returns the correct status codes, response
 shapes, and database side-effects. The database layer is real — no mocking, no
@@ -65,7 +79,7 @@ No truncation required; tests are fully isolated.
 | **Environment** | Real PostgreSQL container (testcontainers); real ports 18001–18004 |
 | **Location** | `tests/perf/` |
 | **Run** | `just backend-perf` |
-| **Allure results** | `allure-results/` (combined with integration results) |
+| **Allure results** | `allure-results-perf/` → CI artifact `allure-results-perf` |
 
 **What it proves:** Sync `def` handlers process requests concurrently via the
 thread pool; `async def` handlers with blocking I/O serialise requests. These
@@ -81,7 +95,7 @@ tests are intentionally slow (~20s) and demonstrate the key architectural choice
 | **Environment** | Full Docker Compose stack (PostgreSQL + Prometheus + Loki + Grafana) + FastAPI on host |
 | **Location** | `tests/e2e/` |
 | **Run** | `just backend-e2e` (requires `just platform-up` + `just backend-dev`) |
-| **Allure results** | `allure-results/` (combined with integration results) |
+| **Allure results** | `allure-results-e2e/` → CI artifact `allure-results-e2e` |
 
 **What it proves:** Prometheus scrapes metrics from `/metrics`, Loki receives
 log lines, Grafana datasources are healthy and queryable. The observability stack
@@ -191,7 +205,8 @@ and Playwright:
 
 Current layer mapping:
 
-- `tests/test_*.py` -> `Backend` / `API Integration` / `layer=base`
+- `tests/unit/` -> `Backend` / `Unit` / `layer=base`
+- `tests/integration/` -> `Backend` / `API Integration` / `layer=base`
 - `tests/perf/` -> `Backend` / `Performance` / `layer=middle`
 - `tests/e2e/` -> `Backend` / `Live Stack E2E` / `layer=top`
 - `frontend/src/__tests__/` -> `Frontend` / `Vitest` / `layer=base`
@@ -212,7 +227,9 @@ Clears all previous results, runs the full test suite (`just ci`), then opens a 
 
 | Suite | Results directory | How to view |
 |-------|-------------------|-------------|
-| Backend integration + perf + obs E2E | `allure-results/` | `just backend-test-report` |
+| Backend unit + integration | `allure-results/` | `just backend-test-report` |
+| Backend perf | `allure-results-perf/` | `just backend-perf-report` |
+| Backend obs E2E | `allure-results-e2e/` | `just backend-e2e` then `allure serve allure-results-e2e` |
 | Frontend unit (Vitest) | `frontend/allure-results/` | `just frontend-test-report` |
 | Frontend browser E2E (Playwright) | `frontend/allure-results-e2e/` | `just frontend-e2e-report` |
 
@@ -228,24 +245,31 @@ Deletes all three results directories so the next run starts from a clean slate.
 
 ## CI Job Mapping
 
-| GitHub Actions job | Suite(s) | Needs |
-|-------------------|----------|-------|
-| `frontend` | Vitest unit/component | — |
-| `backend-lint` | Ruff + basedpyright | — |
-| `backend-test` | pytest unit/integration | `backend-lint` |
-| `backend-perf` | pytest perf | `backend-lint` |
-| `e2e` | pytest observability E2E | `backend-lint` |
-| `frontend-e2e` | Playwright browser E2E | `backend-lint`, `frontend` |
+| GitHub Actions job | Suite(s) | Allure artifact | Needs |
+|-------------------|----------|-----------------|-------|
+| `frontend` | Vitest unit/component | `allure-results-frontend` | — |
+| `backend-lint` | Ruff + basedpyright | — | — |
+| `backend-test` | pytest unit + integration | `allure-results-backend` | `backend-lint` |
+| `backend-perf` | pytest perf | — | `backend-lint` |
+| `e2e` | pytest observability E2E | `allure-results-e2e` | `backend-lint` |
+| `frontend-e2e` | Playwright browser E2E | `allure-results-frontend-e2e` | `backend-lint`, `frontend` |
 
 ---
 
 ## How to Add a New Test
 
+### Backend unit test
+
+1. Add a class to `tests/unit/` (no DB fixture, no client).
+2. Decorate with `@allure.feature` and `@allure.story` at the **class level**.
+3. Safe to run anywhere — devcontainer, host, CI.
+
 ### Backend integration test
 
-1. Add a class to the appropriate `tests/test_*.py` file (or create a new one).
+1. Add a class to `tests/integration/` (or create a new file there).
 2. Decorate with `@allure.feature` and `@allure.story` at the **class level**.
 3. Use the `client: TestClient` fixture — the session is already isolated via savepoint.
+4. **Run on host only** — requires Docker for testcontainers.
 
 ```python
 @allure.feature("Routines")

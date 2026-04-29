@@ -141,11 +141,11 @@ class TestRoutineCRUD:
 
         assert response.status_code == 200
         body = response.json()
-        assert [routine["name"] for routine in body[:2]] == [
+        assert [routine["name"] for routine in body["items"][:2]] == [
             "Newer Routine",
             "Older Routine",
         ]
-        older_row = next(r for r in body if r["id"] == older["id"])
+        older_row = next(r for r in body["items"] if r["id"] == older["id"])
         assert older_row["actions"] == [
             {
                 "id": older_row["actions"][0]["id"],
@@ -690,20 +690,7 @@ class TestExecutionLifecycle:
         self,
         client: TestClient,
         auth_headers: dict[str, str],
-        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        started: list[tuple[int, str, int | None]] = []
-
-        def fake_start(
-            routine_id: int, triggered_by: str, execution_id: int | None = None
-        ) -> None:
-            started.append((routine_id, triggered_by, execution_id))
-
-        monkeypatch.setattr(
-            "backend.routine_routes.execution_launcher.start",
-            fake_start,
-        )
-
         routine = _create_routine(client, auth_headers, name="Run Me")
         routine_id = routine["id"]
 
@@ -713,7 +700,6 @@ class TestExecutionLifecycle:
         body = response.json()
         assert "execution_id" in body
         assert isinstance(body["execution_id"], int)
-        assert started == [(routine_id, "manual", body["execution_id"])]
 
     def test_execution_completes(
         self,
@@ -743,7 +729,6 @@ class TestExecutionLifecycle:
             container_session_factory,
         )
 
-        from backend.execution_engine import run_routine
         from backend.models import Action, Routine, RoutineExecution
 
         # Use real committed sessions so the execution engine can see the rows.
@@ -779,7 +764,7 @@ class TestExecutionLifecycle:
             execution_id = execution.id
 
         # Run the engine synchronously (no thread) so we can assert inline.
-        run_routine(routine_id, "manual", execution_id)
+        _engine_module.routine_executor.run(routine_id, "manual", execution_id)
 
         # Verify the execution reached 'completed'.
         with container_session_factory() as session:
@@ -788,12 +773,20 @@ class TestExecutionLifecycle:
             assert result.status == "completed"
             assert result.completed_at is not None
 
-            # Clean up committed data so testcontainer state stays consistent.
-            session.delete(result)
+        # Clean up in two steps: delete execution first (cascades to action_executions),
+        # then delete the routine (cascades to actions). Splitting commits avoids FK
+        # violations that occur when SQLAlchemy flushes action deletions before
+        # action_execution deletions within a single transaction.
+        with container_session_factory() as session:
+            result = session.get(RoutineExecution, execution_id)
+            if result is not None:
+                session.delete(result)
+                session.commit()
+        with container_session_factory() as session:
             routine_obj = session.get(Routine, routine_id)
             if routine_obj is not None:
                 session.delete(routine_obj)
-            session.commit()
+                session.commit()
 
     def test_execution_failure_marks_failed(
         self,
@@ -810,7 +803,6 @@ class TestExecutionLifecycle:
             container_session_factory,
         )
 
-        from backend.execution_engine import run_routine
         from backend.models import Action, Routine, RoutineExecution
 
         with container_session_factory() as session:
@@ -845,7 +837,7 @@ class TestExecutionLifecycle:
             routine_id = routine.id
             execution_id = execution.id
 
-        run_routine(routine_id, "manual", execution_id)
+        _engine_module.routine_executor.run(routine_id, "manual", execution_id)
 
         with container_session_factory() as session:
             result = session.get(RoutineExecution, execution_id)
@@ -853,53 +845,35 @@ class TestExecutionLifecycle:
             assert result.status == "failed"
             assert result.completed_at is not None
 
-            session.delete(result)
+        with container_session_factory() as session:
+            result = session.get(RoutineExecution, execution_id)
+            if result is not None:
+                session.delete(result)
+                session.commit()
+        with container_session_factory() as session:
             routine_obj = session.get(Routine, routine_id)
             if routine_obj is not None:
                 session.delete(routine_obj)
-            session.commit()
+                session.commit()
 
     def test_execution_appears_in_active(
         self,
         client: TestClient,
         auth_headers: dict[str, str],
-        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Verify a running execution appears in the active executions list.
+        """Verify an enqueued execution appears in the active executions list.
 
-        The execution row is inserted by the route handler via the test session
-        (injected via ``get_session`` override) and is therefore immediately
-        visible to subsequent queries on the same session.  We do not need the
-        background thread to complete — we only assert the row exists in the
-        ``/executions/active`` response before the sleep finishes.
+        The route handler inserts a RoutineExecution row with status='queued'
+        synchronously before returning 202.  The test session sees the row
+        immediately — no background worker is needed.
         """
-
-        def fake_start(*_args: object, **_kwargs: object) -> None:
-            return None
-
-        monkeypatch.setattr(
-            "backend.routine_routes.execution_launcher.start",
-            fake_start,
-        )
-
-        # Use a 3-second sleep so the execution is still running when we poll
-        routine = _create_routine(client, auth_headers, name="Slow Routine")
+        routine = _create_routine(client, auth_headers, name="Queued Routine")
         routine_id = routine["id"]
-        _create_action(
-            client,
-            auth_headers,
-            routine_id,
-            action_type="sleep",
-            config={"seconds": 3},
-        )
 
         run_response = client.post(f"/routines/{routine_id}/run", headers=auth_headers)
         assert run_response.status_code == 202
         execution_id = run_response.json()["execution_id"]
 
-        # Fetch active executions — the execution row was inserted into the test
-        # session by insert_execution_row before the thread started, so it is
-        # immediately visible here without any sleep.
         active_response = client.get("/executions/active")
         assert active_response.status_code == 200
         active_ids = [r["id"] for r in active_response.json()]
@@ -935,29 +909,25 @@ class TestTimestampColumns:
 @allure.feature("Routines")  # pyright: ignore[reportUnknownMemberType]
 @allure.story("Conflict")  # pyright: ignore[reportUnknownMemberType]
 class TestRunNowConflict:
-    def test_run_now_409_when_already_running(
+    def test_run_now_allows_multiple_queued_runs(
         self,
         client: TestClient,
         auth_headers: dict[str, str],
-        db_session: Session,
     ) -> None:
-        routine = _create_routine(client, auth_headers, name="Conflict Routine")
+        """The queue model allows multiple concurrent enqueue requests.
+
+        Each POST /run inserts a new RoutineExecution row regardless of whether
+        one is already running or queued — no 409 is returned.
+        """
+        routine = _create_routine(client, auth_headers, name="Queueable Routine")
         routine_id = routine["id"]
 
-        # Manually insert a running execution directly into the test session
-        existing = RoutineExecution(
-            routine_id=routine_id,
-            status="running",
-            triggered_by="manual",
-        )
-        db_session.add(existing)
-        db_session.commit()
+        first = client.post(f"/routines/{routine_id}/run", headers=auth_headers)
+        second = client.post(f"/routines/{routine_id}/run", headers=auth_headers)
 
-        # Now attempt to run the routine again — should get 409
-        response = client.post(f"/routines/{routine_id}/run", headers=auth_headers)
-
-        assert response.status_code == 409
-        assert "already running" in response.json()["detail"].lower()
+        assert first.status_code == 202
+        assert second.status_code == 202
+        assert first.json()["execution_id"] != second.json()["execution_id"]
 
 
 @allure.epic("Backend")  # pyright: ignore[reportUnknownMemberType]
@@ -1030,7 +1000,7 @@ class TestExecutionHistory:
         response = client.get("/executions/history?limit=3")
 
         assert response.status_code == 200
-        assert len(response.json()) <= 3
+        assert len(response.json()["items"]) == 3
 
     def test_history_routine_id_filter_scopes_results(
         self,
@@ -1055,5 +1025,5 @@ class TestExecutionHistory:
 
         assert response.status_code == 200
         body = response.json()
-        assert len(body) >= 1
-        assert all(row["routine_id"] == routine_a["id"] for row in body)
+        assert body["total"] >= 1
+        assert all(row["routine_id"] == routine_a["id"] for row in body["items"])

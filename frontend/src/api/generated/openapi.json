@@ -29,7 +29,7 @@
           "users"
         ],
         "summary": "Google Login",
-        "description": "Redirect the browser to Google's OAuth2 consent screen.\n\nGenerates a CSRF state token, stores it, and builds the authorization URL.\n\nReturns:\n    A 307 redirect to Google's consent screen.",
+        "description": "Redirect the browser to Google's OAuth2 consent screen.\n\nGenerates a CSRF state token and PKCE code verifier, stores them, and\nbuilds the authorization URL with S256 challenge.\n\nArgs:\n    request: The Starlette request (required by slowapi for rate limiting).\n\nReturns:\n    A 307 redirect to Google's consent screen.",
         "operationId": "google_login_auth_google_login_get",
         "responses": {
           "200": {
@@ -49,7 +49,7 @@
           "users"
         ],
         "summary": "Google Callback",
-        "description": "Handle Google's OAuth2 callback, upsert the user, and issue a JWT.\n\nArgs:\n    state: The CSRF state token to validate.\n    session: The database session.\n    code: The authorization code from Google (absent when the user denies consent).\n    error: The error code from Google (e.g. ``access_denied``).\n\nReturns:\n    A redirect to the frontend /auth/callback page with the JWT in the URL\n    fragment ``#token=`` \u2014 fragments are not transmitted to servers and do not\n    appear in access logs or Referer headers.\n\nRaises:\n    HTTPException: 400 if the state is invalid, expired, or Google returned\n        an error (e.g. the user denied consent on the consent screen).\n    HTTPException: 502 if the Google token or userinfo endpoints fail.",
+        "description": "Handle Google's OAuth2 callback, upsert the user, and issue a JWT cookie.\n\nArgs:\n    request: The Starlette request (required by slowapi for rate limiting).\n    state: The CSRF state token to validate.\n    session: The database session.\n    code: The authorization code from Google (absent when the user denies consent).\n    error: The error code from Google (e.g. ``access_denied``).\n\nReturns:\n    A redirect to ``settings.frontend_url`` with two HttpOnly cookies set:\n    ``access_token`` (SameSite=Lax, path=/) and ``refresh_token``\n    (SameSite=Strict, path=/auth).\n\nRaises:\n    HTTPException: 400 if the state is invalid, expired, or Google returned\n        an error.\n    HTTPException: 502 if the Google token or userinfo endpoints fail.",
         "operationId": "google_callback_auth_google_callback_get",
         "parameters": [
           {
@@ -116,6 +116,129 @@
         }
       }
     },
+    "/auth/refresh": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Refresh Token",
+        "description": "Issue a new access JWT in exchange for a valid refresh token.\n\nRotation: the old refresh token is consumed (GETDEL) and a new one is issued.\nA missing or expired refresh token returns 401.  If Redis fails after the\nold token is consumed but before the new token is stored, the old token is\npermanently gone \u2014 the caller must re-authenticate via Google OAuth.\n\nArgs:\n    request: The Starlette request (required by slowapi for rate limiting).\n    session: The database session (used to fetch user profile for extra claims).\n    refresh_token_cookie: Value of the refresh_token cookie.\n\nReturns:\n    200 response with new access_token and refresh_token cookies set.\n\nRaises:\n    HTTPException: 401 if the refresh token is missing or invalid.\n    HTTPException: 503 if Redis is unavailable.",
+        "operationId": "refresh_token_auth_refresh_post",
+        "parameters": [
+          {
+            "name": "refresh_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Refresh Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Logout",
+        "description": "Revoke the current session tokens and clear auth cookies.\n\nAdds the access JWT's jti to the Redis revocation blocklist with TTL equal\nto the remaining token lifetime. Deletes the refresh token from Redis.\n\nArgs:\n    request: The Starlette request (required by slowapi for rate limiting).\n    user: The currently authenticated user email (or None).\n    access_token: The access_token cookie value.\n    refresh_token: The refresh_token cookie value.\n\nReturns:\n    204 No Content with both cookies cleared.",
+        "operationId": "logout_auth_logout_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
+            }
+          },
+          {
+            "name": "refresh_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Refresh Token"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/users/": {
       "get": {
         "tags": [
@@ -124,27 +247,66 @@
         "summary": "List Users",
         "description": "Return all users who have logged in, most recent first.\n\nArgs:\n    _: Requires a valid JWT \u2014 enforces authentication without using the value.\n    session: The database session.\n\nReturns:\n    A list of :class:`UserResponse` objects.\n\nRaises:\n    HTTPException: 401 if the caller is not authenticated.",
         "operationId": "list_users_users__get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
+                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/UserResponse"
                   },
-                  "type": "array",
                   "title": "Response List Users Users  Get"
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
           }
-        },
-        "security": [
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ]
+        }
       }
     },
     "/users/me": {
@@ -155,6 +317,40 @@
         "summary": "Get Current User Profile",
         "description": "Return the authenticated user's own profile.\n\nArgs:\n    current_user: Resolved via :func:`_get_current_user` from the JWT subject.\n\nReturns:\n    The :class:`UserResponse` for the authenticated user.",
         "operationId": "get_current_user_profile_users_me_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -165,13 +361,18 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
           }
-        },
-        "security": [
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ]
+        }
       }
     },
     "/routines/": {
@@ -188,10 +389,10 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/RoutineResponse"
                   },
-                  "type": "array",
                   "title": "Response List Routines Handler Routines  Get"
                 }
               }
@@ -206,15 +407,49 @@
         "summary": "Create Routine Handler",
         "description": "Create a new Routine.\n\nArgs:\n    payload: Validated creation payload.\n    session: Injected database session.\n    _user: Authenticated username (enforces JWT auth; value unused).\n\nReturns:\n    The created Routine with its nested Actions.",
         "operationId": "create_routine_handler_routines__post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
+            }
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/RoutineCreate"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "201": {
@@ -237,12 +472,7 @@
               }
             }
           }
-        },
-        "security": [
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ]
+        }
       }
     },
     "/routines/{routine_id}": {
@@ -294,11 +524,6 @@
         "summary": "Update Routine Handler",
         "description": "Update an existing Routine.\n\nArgs:\n    routine: Injected Routine instance (raises 404 if not found).\n    payload: Fields to update (None values are ignored).\n    session: Injected database session.\n    _user: Authenticated username (enforces JWT auth; value unused).\n\nReturns:\n    The updated Routine with its nested Actions.",
         "operationId": "update_routine_handler_routines__routine_id__put",
-        "security": [
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
         "parameters": [
           {
             "name": "routine_id",
@@ -307,6 +532,38 @@
             "schema": {
               "type": "integer",
               "title": "Routine Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
             }
           }
         ],
@@ -350,11 +607,6 @@
         "summary": "Delete Routine Handler",
         "description": "Delete a Routine and its associated Actions.\n\nArgs:\n    routine: Injected Routine instance (raises 404 if not found).\n    session: Injected database session.\n    _user: Authenticated username (enforces JWT auth; value unused).",
         "operationId": "delete_routine_handler_routines__routine_id__delete",
-        "security": [
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
         "parameters": [
           {
             "name": "routine_id",
@@ -363,6 +615,38 @@
             "schema": {
               "type": "integer",
               "title": "Routine Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
             }
           }
         ],
@@ -436,11 +720,6 @@
         "summary": "Create Action Handler",
         "description": "Create a new Action within a Routine.\n\nArgs:\n    routine: Injected Routine instance (raises 404 if not found).\n    payload: Validated creation payload.\n    session: Injected database session.\n    _user: Authenticated username (enforces JWT auth; value unused).\n\nReturns:\n    The created Action.",
         "operationId": "create_action_handler_routines__routine_id__actions_post",
-        "security": [
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
         "parameters": [
           {
             "name": "routine_id",
@@ -449,6 +728,38 @@
             "schema": {
               "type": "integer",
               "title": "Routine Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
             }
           }
         ],
@@ -494,11 +805,6 @@
         "summary": "Run Now Handler",
         "description": "Trigger an immediate execution of a Routine.\n\nInserts a RoutineExecution row and starts the engine in a daemon thread.\nReturns 409 if the routine is already running.\n\nArgs:\n    routine: Injected Routine instance (raises 404 if not found).\n    session: Injected database session.\n    _user: Authenticated username (enforces JWT auth; value unused).\n\nReturns:\n    RunResponse containing the new execution ID.\n\nRaises:\n    HTTPException: 409 if the Routine is already running.",
         "operationId": "run_now_handler_routines__routine_id__run_post",
-        "security": [
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
         "parameters": [
           {
             "name": "routine_id",
@@ -507,6 +813,38 @@
             "schema": {
               "type": "integer",
               "title": "Routine Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
             }
           }
         ],
@@ -542,11 +880,6 @@
         "summary": "Update Action Handler",
         "description": "Update an existing Action.\n\nArgs:\n    action: Injected Action instance (raises 404 if not found).\n    payload: Fields to update (None values are ignored).\n    session: Injected database session.\n    _user: Authenticated username (enforces JWT auth; value unused).\n\nReturns:\n    The updated Action.",
         "operationId": "update_action_handler_actions__action_id__put",
-        "security": [
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
         "parameters": [
           {
             "name": "action_id",
@@ -555,6 +888,38 @@
             "schema": {
               "type": "integer",
               "title": "Action Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
             }
           }
         ],
@@ -598,11 +963,6 @@
         "summary": "Delete Action Handler",
         "description": "Delete an Action and compact the position sequence.\n\nArgs:\n    action: Injected Action instance (raises 404 if not found).\n    session: Injected database session.\n    _user: Authenticated username (enforces JWT auth; value unused).",
         "operationId": "delete_action_handler_actions__action_id__delete",
-        "security": [
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
         "parameters": [
           {
             "name": "action_id",
@@ -611,6 +971,38 @@
             "schema": {
               "type": "integer",
               "title": "Action Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
             }
           }
         ],
@@ -637,7 +1029,7 @@
           "executions"
         ],
         "summary": "Active Executions Handler",
-        "description": "Return all currently running Routine executions.\n\nArgs:\n    session: Injected database session.\n\nReturns:\n    List of running ExecutionResponse records, newest first.",
+        "description": "Return all currently running Routine executions with per-action progress.\n\nArgs:\n    session: Injected database session.\n\nReturns:\n    List of running ActiveExecutionResponse records, newest first.",
         "operationId": "active_executions_handler_executions_active_get",
         "responses": {
           "200": {
@@ -646,7 +1038,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/ExecutionResponse"
+                    "$ref": "#/components/schemas/ActiveExecutionResponse"
                   },
                   "type": "array",
                   "title": "Response Active Executions Handler Executions Active Get"
@@ -803,7 +1195,25 @@
             "title": "Action Type"
           },
           "config": {
-            "additionalProperties": true,
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "type": "object",
             "title": "Config"
           },
@@ -827,6 +1237,100 @@
         "title": "ActionCreate",
         "description": "Payload for creating a new Action within a Routine."
       },
+      "ActionExecutionResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "action_id": {
+            "type": "integer",
+            "title": "Action Id"
+          },
+          "position": {
+            "type": "integer",
+            "title": "Position"
+          },
+          "action_type": {
+            "type": "string",
+            "enum": [
+              "sleep",
+              "echo"
+            ],
+            "title": "Action Type"
+          },
+          "config": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Config"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "completed",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "action_id",
+          "position",
+          "action_type",
+          "config",
+          "status",
+          "started_at",
+          "completed_at"
+        ],
+        "title": "ActionExecutionResponse",
+        "description": "Response DTO for a single Action's execution record within a RoutineExecution."
+      },
       "ActionResponse": {
         "properties": {
           "id": {
@@ -843,10 +1347,32 @@
           },
           "action_type": {
             "type": "string",
+            "enum": [
+              "sleep",
+              "echo"
+            ],
             "title": "Action Type"
           },
           "config": {
-            "additionalProperties": true,
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "type": "object",
             "title": "Config"
           }
@@ -882,7 +1408,25 @@
           "config": {
             "anyOf": [
               {
-                "additionalProperties": true,
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "type": "object"
               },
               {
@@ -906,6 +1450,77 @@
         "type": "object",
         "title": "ActionUpdate",
         "description": "Payload for updating an existing Action."
+      },
+      "ActiveExecutionResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "routine_id": {
+            "type": "integer",
+            "title": "Routine Id"
+          },
+          "routine_name": {
+            "type": "string",
+            "title": "Routine Name"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "completed",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "triggered_by": {
+            "type": "string",
+            "enum": [
+              "cron",
+              "interval",
+              "manual"
+            ],
+            "title": "Triggered By"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "action_executions": {
+            "items": {
+              "$ref": "#/components/schemas/ActionExecutionResponse"
+            },
+            "type": "array",
+            "title": "Action Executions",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "routine_id",
+          "routine_name",
+          "status",
+          "triggered_by",
+          "started_at",
+          "completed_at"
+        ],
+        "title": "ActiveExecutionResponse",
+        "description": "Execution response extended with per-action progress.\n\nUsed by the ``GET /executions/active`` endpoint."
       },
       "Body_login_for_access_token_auth_token_post": {
         "properties": {
@@ -982,10 +1597,20 @@
           },
           "status": {
             "type": "string",
+            "enum": [
+              "running",
+              "completed",
+              "failed"
+            ],
             "title": "Status"
           },
           "triggered_by": {
             "type": "string",
+            "enum": [
+              "cron",
+              "interval",
+              "manual"
+            ],
             "title": "Triggered By"
           },
           "started_at": {
@@ -1061,7 +1686,25 @@
           "schedule_config": {
             "anyOf": [
               {
-                "additionalProperties": true,
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "type": "object"
               },
               {
@@ -1107,12 +1750,35 @@
           },
           "schedule_type": {
             "type": "string",
+            "enum": [
+              "cron",
+              "interval",
+              "manual"
+            ],
             "title": "Schedule Type"
           },
           "schedule_config": {
             "anyOf": [
               {
-                "additionalProperties": true,
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "type": "object"
               },
               {
@@ -1195,7 +1861,25 @@
           "schedule_config": {
             "anyOf": [
               {
-                "additionalProperties": true,
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "type": "object"
               },
               {
@@ -1327,17 +2011,6 @@
           "type"
         ],
         "title": "ValidationError"
-      }
-    },
-    "securitySchemes": {
-      "OAuth2PasswordBearer": {
-        "type": "oauth2",
-        "flows": {
-          "password": {
-            "scopes": {},
-            "tokenUrl": "/auth/token"
-          }
-        }
       }
     }
   }

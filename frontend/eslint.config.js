@@ -18,6 +18,7 @@ export default defineConfigWithVueTs(
       'allure-report-vitest/',
       'coverage/',
       'playwright-report/',
+      'playwright/.cache/',
       'test-results/',
       // Build tool configs live outside src/ and are not part of the app
       '*.config.*',

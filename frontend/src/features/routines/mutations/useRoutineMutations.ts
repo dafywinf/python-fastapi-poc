@@ -84,17 +84,12 @@ export function useCreateActionMutation(routineId: number) {
   })
 }
 
-export function useReorderActionMutation(routineId: number) {
+export function useBulkReorderActionsMutation(routineId: number) {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({
-      actionId,
-      position,
-    }: {
-      actionId: number
-      position: number
-    }) => routinesApi.updateAction(actionId, { position }),
+    mutationFn: (actionIds: number[]) =>
+      routinesApi.reorderActions(routineId, actionIds),
     onSuccess: async () => {
       await invalidateRoutineDetail(queryClient, routineId)
     },

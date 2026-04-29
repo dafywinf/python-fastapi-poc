@@ -35,7 +35,11 @@ export interface paths {
          * Google Login
          * @description Redirect the browser to Google's OAuth2 consent screen.
          *
-         *     Generates a CSRF state token, stores it, and builds the authorization URL.
+         *     Generates a CSRF state token and PKCE code verifier, stores them, and
+         *     builds the authorization URL with S256 challenge.
+         *
+         *     Args:
+         *         request: The Starlette request (required by slowapi for rate limiting).
          *
          *     Returns:
          *         A 307 redirect to Google's consent screen.
@@ -58,27 +62,97 @@ export interface paths {
         };
         /**
          * Google Callback
-         * @description Handle Google's OAuth2 callback, upsert the user, and issue a JWT.
+         * @description Handle Google's OAuth2 callback, upsert the user, and issue a JWT cookie.
          *
          *     Args:
+         *         request: The Starlette request (required by slowapi for rate limiting).
          *         state: The CSRF state token to validate.
          *         session: The database session.
          *         code: The authorization code from Google (absent when the user denies consent).
          *         error: The error code from Google (e.g. ``access_denied``).
          *
          *     Returns:
-         *         A redirect to the frontend /auth/callback page with the JWT in the URL
-         *         fragment ``#token=`` — fragments are not transmitted to servers and do not
-         *         appear in access logs or Referer headers.
+         *         A redirect to ``settings.frontend_url`` with two HttpOnly cookies set:
+         *         ``access_token`` (SameSite=Lax, path=/) and ``refresh_token``
+         *         (SameSite=Strict, path=/auth).
          *
          *     Raises:
          *         HTTPException: 400 if the state is invalid, expired, or Google returned
-         *             an error (e.g. the user denied consent on the consent screen).
+         *             an error.
          *         HTTPException: 502 if the Google token or userinfo endpoints fail.
          */
         get: operations["google_callback_auth_google_callback_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refresh Token
+         * @description Issue a new access JWT in exchange for a valid refresh token.
+         *
+         *     Rotation: the old refresh token is consumed (GETDEL) and a new one is issued.
+         *     A missing or expired refresh token returns 401.  If Redis fails after the
+         *     old token is consumed but before the new token is stored, the old token is
+         *     permanently gone — the caller must re-authenticate via Google OAuth.
+         *
+         *     Args:
+         *         request: The Starlette request (required by slowapi for rate limiting).
+         *         session: The database session (used to fetch user profile for extra claims).
+         *         refresh_token_cookie: Value of the refresh_token cookie.
+         *
+         *     Returns:
+         *         200 response with new access_token and refresh_token cookies set.
+         *
+         *     Raises:
+         *         HTTPException: 401 if the refresh token is missing or invalid.
+         *         HTTPException: 503 if Redis is unavailable.
+         */
+        post: operations["refresh_token_auth_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Logout
+         * @description Revoke the current session tokens and clear auth cookies.
+         *
+         *     Adds the access JWT's jti to the Redis revocation blocklist with TTL equal
+         *     to the remaining token lifetime. Deletes the refresh token from Redis.
+         *
+         *     Args:
+         *         request: The Starlette request (required by slowapi for rate limiting).
+         *         user: The currently authenticated user email (or None).
+         *         access_token: The access_token cookie value.
+         *         refresh_token: The refresh_token cookie value.
+         *
+         *     Returns:
+         *         204 No Content with both cookies cleared.
+         */
+        post: operations["logout_auth_logout_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -348,13 +422,13 @@ export interface paths {
         };
         /**
          * Active Executions Handler
-         * @description Return all currently running Routine executions.
+         * @description Return all currently running Routine executions with per-action progress.
          *
          *     Args:
          *         session: Injected database session.
          *
          *     Returns:
-         *         List of running ExecutionResponse records, newest first.
+         *         List of running ActiveExecutionResponse records, newest first.
          */
         get: operations["active_executions_handler_executions_active_get"];
         put?: never;
@@ -464,10 +538,40 @@ export interface components {
             action_type: "sleep" | "echo";
             /** Config */
             config: {
-                [key: string]: unknown;
+                [key: string]: string | number | boolean | null;
             };
             /** Position */
             position?: number | null;
+        };
+        /**
+         * ActionExecutionResponse
+         * @description Response DTO for a single Action's execution record within a RoutineExecution.
+         */
+        ActionExecutionResponse: {
+            /** Id */
+            id: number;
+            /** Action Id */
+            action_id: number;
+            /** Position */
+            position: number;
+            /**
+             * Action Type
+             * @enum {string}
+             */
+            action_type: "sleep" | "echo";
+            /** Config */
+            config: {
+                [key: string]: string | number | boolean | null;
+            };
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "running" | "completed" | "failed";
+            /** Started At */
+            started_at: string | null;
+            /** Completed At */
+            completed_at: string | null;
         };
         /**
          * ActionResponse
@@ -480,11 +584,14 @@ export interface components {
             routine_id: number;
             /** Position */
             position: number;
-            /** Action Type */
-            action_type: string;
+            /**
+             * Action Type
+             * @enum {string}
+             */
+            action_type: "sleep" | "echo";
             /** Config */
             config: {
-                [key: string]: unknown;
+                [key: string]: string | number | boolean | null;
             };
         };
         /**
@@ -496,10 +603,46 @@ export interface components {
             action_type?: ("sleep" | "echo") | null;
             /** Config */
             config?: {
-                [key: string]: unknown;
+                [key: string]: string | number | boolean | null;
             } | null;
             /** Position */
             position?: number | null;
+        };
+        /**
+         * ActiveExecutionResponse
+         * @description Execution response extended with per-action progress.
+         *
+         *     Used by the ``GET /executions/active`` endpoint.
+         */
+        ActiveExecutionResponse: {
+            /** Id */
+            id: number;
+            /** Routine Id */
+            routine_id: number;
+            /** Routine Name */
+            routine_name: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "completed" | "failed";
+            /**
+             * Triggered By
+             * @enum {string}
+             */
+            triggered_by: "cron" | "interval" | "manual";
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Completed At */
+            completed_at: string | null;
+            /**
+             * Action Executions
+             * @default []
+             */
+            action_executions: components["schemas"]["ActionExecutionResponse"][];
         };
         /** Body_login_for_access_token_auth_token_post */
         Body_login_for_access_token_auth_token_post: {
@@ -539,10 +682,16 @@ export interface components {
             routine_id: number;
             /** Routine Name */
             routine_name: string;
-            /** Status */
-            status: string;
-            /** Triggered By */
-            triggered_by: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "completed" | "failed";
+            /**
+             * Triggered By
+             * @enum {string}
+             */
+            triggered_by: "cron" | "interval" | "manual";
             /**
              * Started At
              * Format: date-time
@@ -572,7 +721,7 @@ export interface components {
             schedule_type: "cron" | "interval" | "manual";
             /** Schedule Config */
             schedule_config?: {
-                [key: string]: unknown;
+                [key: string]: string | number | boolean | null;
             } | null;
             /**
              * Is Active
@@ -591,11 +740,14 @@ export interface components {
             name: string;
             /** Description */
             description: string | null;
-            /** Schedule Type */
-            schedule_type: string;
+            /**
+             * Schedule Type
+             * @enum {string}
+             */
+            schedule_type: "cron" | "interval" | "manual";
             /** Schedule Config */
             schedule_config: {
-                [key: string]: unknown;
+                [key: string]: string | number | boolean | null;
             } | null;
             /** Is Active */
             is_active: boolean;
@@ -623,7 +775,7 @@ export interface components {
             schedule_type?: ("cron" | "interval" | "manual") | null;
             /** Schedule Config */
             schedule_config?: {
-                [key: string]: unknown;
+                [key: string]: string | number | boolean | null;
             } | null;
             /** Is Active */
             is_active?: boolean | null;
@@ -759,12 +911,79 @@ export interface operations {
             };
         };
     };
-    list_users_users__get: {
+    refresh_token_auth_refresh_post: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
-            cookie?: never;
+            cookie?: {
+                refresh_token?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    logout_auth_logout_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: {
+                access_token?: string | null;
+                refresh_token?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_users_users__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: {
+                access_token?: string | null;
+            };
         };
         requestBody?: never;
         responses: {
@@ -777,14 +996,27 @@ export interface operations {
                     "application/json": components["schemas"]["UserResponse"][];
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
     get_current_user_profile_users_me_get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
-            cookie?: never;
+            cookie?: {
+                access_token?: string | null;
+            };
         };
         requestBody?: never;
         responses: {
@@ -795,6 +1027,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UserResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -822,9 +1063,13 @@ export interface operations {
     create_routine_handler_routines__post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
-            cookie?: never;
+            cookie?: {
+                access_token?: string | null;
+            };
         };
         requestBody: {
             content: {
@@ -886,11 +1131,15 @@ export interface operations {
     update_routine_handler_routines__routine_id__put: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 routine_id: number;
             };
-            cookie?: never;
+            cookie?: {
+                access_token?: string | null;
+            };
         };
         requestBody: {
             content: {
@@ -921,11 +1170,15 @@ export interface operations {
     delete_routine_handler_routines__routine_id__delete: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 routine_id: number;
             };
-            cookie?: never;
+            cookie?: {
+                access_token?: string | null;
+            };
         };
         requestBody?: never;
         responses: {
@@ -981,11 +1234,15 @@ export interface operations {
     create_action_handler_routines__routine_id__actions_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 routine_id: number;
             };
-            cookie?: never;
+            cookie?: {
+                access_token?: string | null;
+            };
         };
         requestBody: {
             content: {
@@ -1016,11 +1273,15 @@ export interface operations {
     run_now_handler_routines__routine_id__run_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 routine_id: number;
             };
-            cookie?: never;
+            cookie?: {
+                access_token?: string | null;
+            };
         };
         requestBody?: never;
         responses: {
@@ -1047,11 +1308,15 @@ export interface operations {
     update_action_handler_actions__action_id__put: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 action_id: number;
             };
-            cookie?: never;
+            cookie?: {
+                access_token?: string | null;
+            };
         };
         requestBody: {
             content: {
@@ -1082,11 +1347,15 @@ export interface operations {
     delete_action_handler_actions__action_id__delete: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 action_id: number;
             };
-            cookie?: never;
+            cookie?: {
+                access_token?: string | null;
+            };
         };
         requestBody?: never;
         responses: {
@@ -1123,7 +1392,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ExecutionResponse"][];
+                    "application/json": components["schemas"]["ActiveExecutionResponse"][];
                 };
             };
         };
