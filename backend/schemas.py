@@ -1,6 +1,7 @@
 """Pydantic V2 DTOs for auth, users, routines, actions, and executions."""
 
-from datetime import datetime
+from datetime import datetime, timezone
+from typing import Generic, TypeVar
 
 from apscheduler.triggers.cron import CronTrigger
 from pydantic import BaseModel, ConfigDict, model_validator
@@ -10,12 +11,24 @@ from backend.domain_types import (
     SCHEDULE_TYPE_CRON,
     SCHEDULE_TYPE_INTERVAL,
     SCHEDULE_TYPE_MANUAL,
+    ActionExecutionStatus,
     ActionType,
     ExecutionStatus,
     ExecutionTrigger,
     JSONObject,
     ScheduleType,
 )
+
+_T = TypeVar("_T")
+
+
+class PageResponse(BaseModel, Generic[_T]):
+    """Generic paginated response envelope returned by list endpoints."""
+
+    items: list[_T]
+    total: int
+    limit: int
+    offset: int
 
 
 def validate_routine_schedule(
@@ -97,6 +110,16 @@ class ActionCreate(BaseModel):
         """Validate that config matches the declared action type."""
         validate_action_config(self.action_type, self.config)
         return self
+
+
+class ActionsReorderRequest(BaseModel):
+    """Ordered list of action IDs for bulk reordering.
+
+    The backend assigns position 1…n to the supplied IDs in the given order.
+    All IDs must belong to the target routine.
+    """
+
+    action_ids: list[int]
 
 
 class ActionUpdate(BaseModel):
@@ -203,6 +226,25 @@ class RoutineResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class RunRequest(BaseModel):
+    """Optional body for the run endpoint.
+
+    ``scheduled_for`` sets the earliest time the queue worker may start the
+    execution.  Omit or pass ``null`` for immediate execution (scheduled_for
+    defaults to the current time inside ``enqueue_routine_run``).
+    """
+
+    scheduled_for: datetime | None = None
+
+    def utc_scheduled_for(self) -> datetime | None:
+        """Return scheduled_for normalised to UTC, or None for immediate runs."""
+        if self.scheduled_for is None:
+            return None
+        if self.scheduled_for.tzinfo is None:
+            return self.scheduled_for.replace(tzinfo=timezone.utc)
+        return self.scheduled_for.astimezone(timezone.utc)
+
+
 class RunResponse(BaseModel):
     """Response returned immediately when a Routine execution is triggered."""
 
@@ -223,5 +265,31 @@ class ExecutionResponse(BaseModel):
     routine_name: str
     status: ExecutionStatus
     triggered_by: ExecutionTrigger
-    started_at: datetime
+    queued_at: datetime
+    scheduled_for: datetime
+    started_at: datetime | None
     completed_at: datetime | None
+
+
+class ActionExecutionResponse(BaseModel):
+    """Response DTO for a single Action's execution record within a RoutineExecution."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    action_id: int
+    position: int
+    action_type: ActionType
+    config: JSONObject
+    status: ActionExecutionStatus
+    started_at: datetime | None
+    completed_at: datetime | None
+
+
+class ActiveExecutionResponse(ExecutionResponse):
+    """Execution response extended with per-action progress.
+
+    Used by the ``GET /executions/active`` endpoint.
+    """
+
+    action_executions: list[ActionExecutionResponse] = []

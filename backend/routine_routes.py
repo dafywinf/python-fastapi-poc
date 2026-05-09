@@ -8,13 +8,12 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.database import get_session
 from backend.domain_types import EXECUTION_TRIGGER_MANUAL
 from backend.exceptions import handle_exception
-from backend.execution_engine import execution_launcher
+from backend.execution_engine import enqueue_routine_run
 from backend.models import Action, Routine
 from backend.routine_services import (
     create_action,
@@ -22,22 +21,28 @@ from backend.routine_services import (
     delete_action,
     delete_routine,
     get_active_executions,
+    get_execution_detail,
     get_execution_history,
     get_routine,
-    insert_execution_row,
+    get_routine_by_name,
     list_actions,
     list_routines,
+    reorder_actions,
     update_action,
     update_routine,
 )
 from backend.schemas import (
     ActionCreate,
     ActionResponse,
+    ActionsReorderRequest,
     ActionUpdate,
+    ActiveExecutionResponse,
     ExecutionResponse,
+    PageResponse,
     RoutineCreate,
     RoutineResponse,
     RoutineUpdate,
+    RunRequest,
     RunResponse,
 )
 from backend.security import WriteDep
@@ -106,18 +111,32 @@ ActionDep = Annotated[Action, Depends(_get_action_or_404)]
 # ---------------------------------------------------------------------------
 
 
-@routines_router.get("/", response_model=list[RoutineResponse])
+@routines_router.get("/", response_model=PageResponse[RoutineResponse])
 @handle_exception(logger)
-def list_routines_handler(session: SessionDep) -> list[RoutineResponse]:
-    """List all Routines ordered by creation date descending.
+def list_routines_handler(
+    session: SessionDep,
+    search: str | None = None,
+    limit: int = 25,
+    offset: int = 0,
+) -> PageResponse[RoutineResponse]:
+    """List Routines ordered newest first, with optional search and pagination.
 
     Args:
         session: Injected database session.
+        search: Optional substring filter on routine name (case-insensitive).
+        limit: Maximum number of records to return (default 25).
+        offset: Number of records to skip (default 0).
 
     Returns:
-        List of Routines with their nested Actions.
+        Paginated page of Routines with their nested Actions.
     """
-    return [RoutineResponse.model_validate(r) for r in list_routines(session)]
+    items, total = list_routines(session, search=search, limit=limit, offset=offset)
+    return PageResponse(
+        items=[RoutineResponse.model_validate(r) for r in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @routines_router.post(
@@ -138,7 +157,15 @@ def create_routine_handler(
 
     Returns:
         The created Routine with its nested Actions.
+
+    Raises:
+        HTTPException: 409 if a routine with the same name already exists.
     """
+    if get_routine_by_name(session, payload.name.strip()):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"A routine named '{payload.name.strip()}' already exists",
+        )
     return RoutineResponse.model_validate(create_routine(session, payload))
 
 
@@ -247,6 +274,40 @@ def create_action_handler(
         ) from err
 
 
+@routines_router.patch(
+    "/{routine_id}/actions/reorder",
+    response_model=list[ActionResponse],
+)
+@handle_exception(logger)
+def reorder_actions_handler(
+    routine: RoutineDep,
+    payload: ActionsReorderRequest,
+    session: SessionDep,
+    _user: WriteDep,
+) -> list[ActionResponse]:
+    """Bulk-reorder Actions within a Routine by supplying IDs in the desired order.
+
+    All action IDs for the routine must be supplied exactly once. The service
+    assigns positions 1…n in the given order.
+
+    Args:
+        routine: Injected Routine instance (raises 404 if not found).
+        payload: Ordered list of action IDs.
+        session: Injected database session.
+        _user: Authenticated username (enforces JWT auth; value unused).
+
+    Returns:
+        The updated Actions in position order.
+    """
+    try:
+        actions = reorder_actions(session, routine, payload.action_ids)
+        return [ActionResponse.model_validate(a) for a in actions]
+    except ValueError as err:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(err)
+        ) from err
+
+
 @routines_router.post(
     "/{routine_id}/run",
     response_model=RunResponse,
@@ -254,39 +315,32 @@ def create_action_handler(
 )
 @handle_exception(logger)
 def run_now_handler(
-    routine: RoutineDep, session: SessionDep, _user: WriteDep
+    routine: RoutineDep,
+    session: SessionDep,
+    _user: WriteDep,
+    body: RunRequest | None = None,
 ) -> RunResponse:
-    """Trigger an immediate execution of a Routine.
+    """Queue an execution of a Routine, optionally at a future time.
 
-    Inserts a RoutineExecution row and starts the engine in a daemon thread.
-    Returns 409 if the routine is already running.
+    Inserts a RoutineExecution row with status 'queued'. The global execution
+    queue worker will pick it up once ``scheduled_for`` has arrived (defaults
+    to now for immediate runs). Multiple calls are allowed — each adds a new
+    entry to the queue.
 
     Args:
         routine: Injected Routine instance (raises 404 if not found).
-        session: Injected database session.
         _user: Authenticated username (enforces JWT auth; value unused).
+        body: Optional. Supply ``scheduled_for`` to delay execution until a
+            future UTC datetime.
 
     Returns:
         RunResponse containing the new execution ID.
-
-    Raises:
-        HTTPException: 409 if the Routine is already running.
     """
-    routine_id = routine.id
-    try:
-        execution = insert_execution_row(
-            session,
-            routine_id,
-            triggered_by=EXECUTION_TRIGGER_MANUAL,
-        )
-    except IntegrityError:
-        logger.warning("Routine conflict: already running (routine_id=%d)", routine_id)
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Routine is already running",
-        )
-    execution_launcher.start(routine.id, EXECUTION_TRIGGER_MANUAL, execution.id)
-    return RunResponse(execution_id=execution.id)
+    scheduled_for = body.utc_scheduled_for() if body else None
+    execution_id = enqueue_routine_run(
+        routine.id, EXECUTION_TRIGGER_MANUAL, scheduled_for, session
+    )
+    return RunResponse(execution_id=execution_id)
 
 
 # ---------------------------------------------------------------------------
@@ -341,37 +395,82 @@ def delete_action_handler(
 # ---------------------------------------------------------------------------
 
 
-@executions_router.get("/active", response_model=list[ExecutionResponse])
+@executions_router.get("/active", response_model=list[ActiveExecutionResponse])
 @handle_exception(logger)
-def active_executions_handler(session: SessionDep) -> list[ExecutionResponse]:
-    """Return all currently running Routine executions.
+def active_executions_handler(session: SessionDep) -> list[ActiveExecutionResponse]:
+    """Return all currently running Routine executions with per-action progress.
 
     Args:
         session: Injected database session.
 
     Returns:
-        List of running ExecutionResponse records, newest first.
+        List of running ActiveExecutionResponse records, newest first.
     """
     rows = get_active_executions(session)
-    return [ExecutionResponse(**row) for row in rows]
+    return [ActiveExecutionResponse.model_validate(row) for row in rows]
 
 
-@executions_router.get("/history", response_model=list[ExecutionResponse])
+@executions_router.get("/history", response_model=PageResponse[ExecutionResponse])
 @handle_exception(logger)
 def history_handler(
     session: SessionDep,
-    limit: int = 10,
+    limit: int = 25,
+    offset: int = 0,
     routine_id: int | None = None,
-) -> list[ExecutionResponse]:
-    """Return completed or failed Routine executions.
+    search: str | None = None,
+    since_minutes: int | None = None,
+) -> PageResponse[ExecutionResponse]:
+    """Return completed or failed Routine executions with pagination and filters.
 
     Args:
         session: Injected database session.
-        limit: Maximum number of records to return (default 10).
+        limit: Maximum number of records to return (default 25).
+        offset: Number of records to skip (default 0).
         routine_id: If provided, restrict results to this routine.
+        search: Optional substring filter on routine name (case-insensitive).
+        since_minutes: If provided, only return executions queued within
+            the last ``since_minutes`` minutes.
 
     Returns:
-        List of ExecutionResponse records, newest first.
+        Paginated page of ExecutionResponse records, newest first.
     """
-    rows = get_execution_history(session, limit=limit, routine_id=routine_id)
-    return [ExecutionResponse(**row) for row in rows]
+    rows, total = get_execution_history(
+        session,
+        limit=limit,
+        offset=offset,
+        routine_id=routine_id,
+        search=search,
+        since_minutes=since_minutes,
+    )
+    return PageResponse(
+        items=[ExecutionResponse(**row) for row in rows],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@executions_router.get("/{execution_id}", response_model=ActiveExecutionResponse)
+@handle_exception(logger)
+def get_execution_handler(
+    execution_id: int, session: SessionDep
+) -> ActiveExecutionResponse:
+    """Return full details for a single execution including per-action progress.
+
+    Args:
+        execution_id: Path parameter — primary key of the target execution.
+        session: Injected database session.
+
+    Returns:
+        ActiveExecutionResponse with nested action executions.
+
+    Raises:
+        HTTPException: 404 if the execution does not exist.
+    """
+    row = get_execution_detail(session, execution_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Execution {execution_id} not found",
+        )
+    return ActiveExecutionResponse.model_validate(row)

@@ -32,6 +32,9 @@ export async function mountWithApp(
       { path: '/routines', component: { template: '<div />' } },
       { path: '/routines/:id', component: { template: '<div />' } },
       { path: '/history', component: { template: '<div />' } },
+      { path: '/executing', component: { template: '<div />' } },
+      { path: '/routines/create', name: 'routine-create', component: { template: '<div />' } },
+      { path: '/routines/:id/edit', name: 'routine-edit', component: { template: '<div />' } },
     ],
   })
 

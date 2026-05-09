@@ -19,6 +19,15 @@ interface AuthUser {
 const _user = ref<AuthUser | null>(null)
 const _checked = ref(false)
 
+/**
+ * Reset auth state. Called by the API client when a 401 is received so the
+ * next navigation will re-check the session rather than using stale state.
+ */
+export function clearAuth(): void {
+  _user.value = null
+  _checked.value = false
+}
+
 export function useAuth() {
   const router = useRouter()
 
