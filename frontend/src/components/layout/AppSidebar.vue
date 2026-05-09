@@ -1,27 +1,49 @@
 <template>
   <aside
-    class="w-[220px] shrink-0 bg-slate-50 border-r border-slate-200 flex flex-col justify-between py-4 hidden md:flex"
+    class="w-64 shrink-0 bg-app-dark border-r border-white/8 flex flex-col justify-between hidden md:flex"
   >
-    <nav aria-label="Sidebar" class="flex flex-col gap-1 px-3">
-      <RouterLink
-        to="/routines"
-        class="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium text-slate-600 hover:bg-slate-200 hover:text-slate-900 transition-colors no-underline"
-        active-class="bg-indigo-100 text-indigo-800"
-      >
-        <span class="w-4 text-center">&#9776;</span>
-        <span>Routines</span>
-      </RouterLink>
-      <RouterLink
-        to="/history"
-        class="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium text-slate-600 hover:bg-slate-200 hover:text-slate-900 transition-colors no-underline"
-        active-class="bg-indigo-100 text-indigo-800"
-      >
-        <span class="w-4 text-center">&#128336;</span>
-        <span>History</span>
-      </RouterLink>
-    </nav>
-    <div class="px-6">
-      <span class="text-xs text-slate-500">v0.1.0</span>
+    <div>
+      <nav aria-label="Sidebar" class="py-2">
+        <RouterLink
+          to="/"
+          class="flex items-center gap-3 px-4 py-2.5 text-[13px] font-medium text-white/70 hover:bg-white/5 hover:text-white transition-all no-underline"
+          exact-active-class="!bg-white/8 !text-white !border-l-2 !border-l-app-red !pl-[14px]"
+        >
+          <span class="material-symbols-outlined text-white/60 text-lg">dashboard</span>
+          <span>Dashboard</span>
+        </RouterLink>
+
+        <RouterLink
+          to="/routines"
+          class="flex items-center gap-3 px-4 py-2.5 text-[13px] font-medium text-white/70 hover:bg-white/5 hover:text-white transition-all no-underline"
+          active-class="!bg-white/8 !text-white !border-l-2 !border-l-app-red !pl-[14px]"
+        >
+          <span class="material-symbols-outlined text-white/60 text-lg">list_alt</span>
+          <span>Routines</span>
+        </RouterLink>
+
+        <RouterLink
+          to="/history"
+          class="flex items-center gap-3 px-4 py-2.5 text-[13px] font-medium text-white/70 hover:bg-white/5 hover:text-white transition-all no-underline"
+          active-class="!bg-white/8 !text-white !border-l-2 !border-l-app-red !pl-[14px]"
+        >
+          <span class="material-symbols-outlined text-white/60 text-lg">history</span>
+          <span>History</span>
+        </RouterLink>
+
+        <RouterLink
+          to="/users"
+          class="flex items-center gap-3 px-4 py-2.5 text-[13px] font-medium text-white/70 hover:bg-white/5 hover:text-white transition-all no-underline"
+          active-class="!bg-white/8 !text-white !border-l-2 !border-l-app-red !pl-[14px]"
+        >
+          <span class="material-symbols-outlined text-white/60 text-lg">badge</span>
+          <span>Users</span>
+        </RouterLink>
+      </nav>
+    </div>
+
+    <div class="border-t border-white/8 py-3 px-5">
+      <span class="text-[10px] font-light text-white/30 uppercase tracking-[0.15em]">v0.1.0</span>
     </div>
   </aside>
 </template>
