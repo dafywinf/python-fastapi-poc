@@ -1,7 +1,7 @@
 """Business logic for Routine, Action, and RoutineExecution operations."""
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import TypedDict, cast
 
 from sqlalchemy import func, select
@@ -11,8 +11,10 @@ from sqlalchemy.orm import Session, joinedload
 from backend.domain_types import (
     EXECUTION_STATUS_COMPLETED,
     EXECUTION_STATUS_FAILED,
+    EXECUTION_STATUS_QUEUED,
     EXECUTION_STATUS_RUNNING,
     SCHEDULE_TYPE_MANUAL,
+    ActionExecutionStatus,
     ActionType,
     ExecutionStatus,
     ExecutionTrigger,
@@ -36,6 +38,19 @@ from backend.schemas import (
 logger = logging.getLogger(__name__)
 
 
+class ActionExecutionRow(TypedDict):
+    """Serialized action execution row."""
+
+    id: int
+    action_id: int
+    position: int
+    action_type: ActionType
+    config: dict[str, object]
+    status: ActionExecutionStatus
+    started_at: datetime | None
+    completed_at: datetime | None
+
+
 class ExecutionRow(TypedDict):
     """Serialized execution row joined with routine name."""
 
@@ -44,8 +59,16 @@ class ExecutionRow(TypedDict):
     routine_name: str
     status: ExecutionStatus
     triggered_by: ExecutionTrigger
-    started_at: datetime
+    queued_at: datetime
+    scheduled_for: datetime
+    started_at: datetime | None
     completed_at: datetime | None
+
+
+class ActiveExecutionRow(ExecutionRow):
+    """Execution row extended with per-action progress."""
+
+    action_executions: list[ActionExecutionRow]
 
 
 # ---------------------------------------------------------------------------
@@ -53,18 +76,31 @@ class ExecutionRow(TypedDict):
 # ---------------------------------------------------------------------------
 
 
-def list_routines(session: Session) -> list[Routine]:
-    """Return all Routine records ordered by creation date descending.
+def list_routines(
+    session: Session,
+    search: str | None = None,
+    limit: int = 25,
+    offset: int = 0,
+) -> tuple[list[Routine], int]:
+    """Return a paginated, optionally filtered slice of Routine records.
 
     Args:
         session: Active SQLAlchemy session.
+        search: Optional substring to filter on routine name (case-insensitive).
+        limit: Maximum number of records to return.
+        offset: Number of records to skip.
 
     Returns:
-        List of Routine instances.
+        Tuple of (page of Routine instances ordered newest first, total match count).
     """
-    return list(
-        session.execute(select(Routine).order_by(Routine.created_at.desc())).scalars()
-    )
+    stmt = select(Routine).order_by(Routine.created_at.desc())
+    if search:
+        stmt = stmt.where(Routine.name.ilike(f"%{search}%"))
+    total: int = session.execute(
+        select(func.count()).select_from(stmt.subquery())
+    ).scalar_one()
+    rows = list(session.execute(stmt.limit(limit).offset(offset)).scalars())
+    return rows, total
 
 
 def create_routine(session: Session, payload: RoutineCreate) -> Routine:
@@ -103,6 +139,20 @@ def get_routine(session: Session, routine_id: int) -> Routine | None:
         Routine instance or None if not found.
     """
     return session.get(Routine, routine_id)
+
+
+def get_routine_by_name(session: Session, name: str) -> Routine | None:
+    """Fetch a single Routine by name (case-insensitive).
+
+    Args:
+        session: Active SQLAlchemy session.
+        name: The routine name to search for.
+
+    Returns:
+        Routine instance or None if not found.
+    """
+    stmt = select(Routine).where(func.lower(Routine.name) == func.lower(name))
+    return session.execute(stmt).scalar_one_or_none()
 
 
 def update_routine(
@@ -350,6 +400,44 @@ def update_action(session: Session, action: Action, payload: ActionUpdate) -> Ac
     return action
 
 
+def reorder_actions(
+    session: Session,
+    routine: Routine,
+    action_ids: list[int],
+) -> list[Action]:
+    """Assign positions 1…n to actions in the given order.
+
+    All supplied IDs must belong to the routine and the list must include every
+    action exactly once.
+
+    Args:
+        session: Active SQLAlchemy session.
+        routine: The parent Routine instance.
+        action_ids: Action IDs in the desired order (first = position 1).
+
+    Returns:
+        The updated Action instances in position order.
+
+    Raises:
+        ValueError: If the supplied IDs do not exactly match the routine's actions.
+    """
+    existing_actions: list[Action] = list(
+        session.execute(select(Action).where(Action.routine_id == routine.id)).scalars()
+    )
+    existing_ids = {a.id for a in existing_actions}
+    if set(action_ids) != existing_ids or len(action_ids) != len(existing_ids):
+        raise ValueError(
+            "action_ids must contain every action in the routine exactly once"
+        )
+
+    action_by_id = {a.id: a for a in existing_actions}
+    for position, action_id in enumerate(action_ids, start=1):
+        action_by_id[action_id].position = position
+
+    session.commit()
+    return sorted(existing_actions, key=lambda a: a.position)
+
+
 def delete_action(session: Session, action: Action) -> None:
     """Delete an Action and compact the position sequence for the routine.
 
@@ -380,10 +468,10 @@ def delete_action(session: Session, action: Action) -> None:
 def insert_execution_row(
     session: Session, routine_id: int, triggered_by: ExecutionTrigger
 ) -> RoutineExecution:
-    """Insert a new RoutineExecution row with status 'running'.
+    """Insert a new RoutineExecution row with status 'queued'.
 
-    The DB unique partial index on (routine_id, status='running') will raise an
-    IntegrityError if the routine is already executing.
+    The queue worker will claim the row and transition it to 'running' when
+    it is the oldest item whose ``scheduled_for`` time has arrived.
 
     Args:
         session: Active SQLAlchemy session.
@@ -395,7 +483,7 @@ def insert_execution_row(
     """
     execution = RoutineExecution(
         routine_id=routine_id,
-        status=EXECUTION_STATUS_RUNNING,
+        status=EXECUTION_STATUS_QUEUED,
         triggered_by=triggered_by,
     )
     session.add(execution)
@@ -404,24 +492,36 @@ def insert_execution_row(
     return execution
 
 
-def get_active_executions(session: Session) -> list[ExecutionRow]:
-    """Return all currently running executions joined with routine name.
+def get_active_executions(session: Session) -> list[ActiveExecutionRow]:
+    """Return all queued and running executions with routine name and action progress.
+
+    Results are ordered by ``scheduled_for`` ascending so the frontend can
+    render a FIFO queue view — the running item (if any) is always first,
+    followed by queued items in the order they will execute.
 
     Args:
         session: Active SQLAlchemy session.
 
     Returns:
-        List of dicts with execution fields plus ``routine_name``.
+        List of dicts with execution fields, ``routine_name``, and nested
+        ``action_executions`` ordered by position.
     """
     stmt = (
         select(RoutineExecution)
-        .options(joinedload(RoutineExecution.routine))
-        .where(RoutineExecution.status == EXECUTION_STATUS_RUNNING)
-        .order_by(RoutineExecution.started_at.desc())
+        .options(
+            joinedload(RoutineExecution.routine),
+            joinedload(RoutineExecution.action_executions),
+        )
+        .where(
+            RoutineExecution.status.in_(
+                [EXECUTION_STATUS_QUEUED, EXECUTION_STATUS_RUNNING]
+            )
+        )
+        .order_by(RoutineExecution.scheduled_for.asc())
     )
     results = list(session.execute(stmt).scalars().unique())
     rows = cast(
-        list[ExecutionRow],
+        list[ActiveExecutionRow],
         [
             {
                 "id": r.id,
@@ -429,8 +529,23 @@ def get_active_executions(session: Session) -> list[ExecutionRow]:
                 "routine_name": r.routine.name,
                 "status": r.status,
                 "triggered_by": r.triggered_by,
+                "queued_at": r.queued_at,
+                "scheduled_for": r.scheduled_for,
                 "started_at": r.started_at,
                 "completed_at": r.completed_at,
+                "action_executions": [
+                    {
+                        "id": ae.id,
+                        "action_id": ae.action_id,
+                        "position": ae.position,
+                        "action_type": ae.action_type,
+                        "config": ae.config,
+                        "status": ae.status,
+                        "started_at": ae.started_at,
+                        "completed_at": ae.completed_at,
+                    }
+                    for ae in sorted(r.action_executions, key=lambda x: x.position)
+                ],
             }
             for r in results
         ],
@@ -438,20 +553,81 @@ def get_active_executions(session: Session) -> list[ExecutionRow]:
     return rows
 
 
-def get_execution_history(
+def get_execution_detail(
     session: Session,
-    limit: int = 10,
-    routine_id: int | None = None,
-) -> list[ExecutionRow]:
-    """Return completed or failed executions, optionally filtered by routine.
+    execution_id: int,
+) -> ActiveExecutionRow | None:
+    """Return a single execution with routine name and action progress.
 
     Args:
         session: Active SQLAlchemy session.
-        limit: Maximum number of records to return (default 10).
-        routine_id: If provided, restrict results to this routine.
+        execution_id: Primary key of the target RoutineExecution.
 
     Returns:
-        List of dicts with execution fields plus ``routine_name``, newest first.
+        ActiveExecutionRow dict or None if the execution does not exist.
+    """
+    stmt = (
+        select(RoutineExecution)
+        .options(
+            joinedload(RoutineExecution.routine),
+            joinedload(RoutineExecution.action_executions),
+        )
+        .where(RoutineExecution.id == execution_id)
+    )
+    result = session.execute(stmt).unique().scalar_one_or_none()
+    if result is None:
+        return None
+    return cast(
+        ActiveExecutionRow,
+        {
+            "id": result.id,
+            "routine_id": result.routine_id,
+            "routine_name": result.routine.name,
+            "status": result.status,
+            "triggered_by": result.triggered_by,
+            "queued_at": result.queued_at,
+            "scheduled_for": result.scheduled_for,
+            "started_at": result.started_at,
+            "completed_at": result.completed_at,
+            "action_executions": [
+                {
+                    "id": ae.id,
+                    "action_id": ae.action_id,
+                    "position": ae.position,
+                    "action_type": ae.action_type,
+                    "config": ae.config,
+                    "status": ae.status,
+                    "started_at": ae.started_at,
+                    "completed_at": ae.completed_at,
+                }
+                for ae in sorted(result.action_executions, key=lambda x: x.position)
+            ],
+        },
+    )
+
+
+def get_execution_history(
+    session: Session,
+    limit: int = 25,
+    offset: int = 0,
+    routine_id: int | None = None,
+    search: str | None = None,
+    since_minutes: int | None = None,
+) -> tuple[list[ExecutionRow], int]:
+    """Return paginated completed or failed executions, with optional filters.
+
+    Args:
+        session: Active SQLAlchemy session.
+        limit: Maximum number of records to return.
+        offset: Number of records to skip.
+        routine_id: If provided, restrict results to this routine.
+        search: Optional substring to filter on routine name (case-insensitive).
+        since_minutes: If provided, only return executions queued within
+            the last ``since_minutes`` minutes.
+
+    Returns:
+        Tuple of (page of execution dicts with ``routine_name``, total match count),
+        newest first.
     """
     stmt = (
         select(RoutineExecution)
@@ -461,12 +637,22 @@ def get_execution_history(
                 [EXECUTION_STATUS_COMPLETED, EXECUTION_STATUS_FAILED]
             )
         )
-        .order_by(RoutineExecution.started_at.desc())
+        .order_by(RoutineExecution.queued_at.desc())
     )
     if routine_id is not None:
         stmt = stmt.where(RoutineExecution.routine_id == routine_id)
-    stmt = stmt.limit(limit)
-    results = list(session.execute(stmt).scalars().unique())
+    if search:
+        # joinedload does not produce a filterable JOIN — add an explicit one
+        stmt = stmt.join(RoutineExecution.routine).where(
+            Routine.name.ilike(f"%{search}%")
+        )
+    if since_minutes is not None:
+        cutoff = datetime.now(UTC) - timedelta(minutes=since_minutes)
+        stmt = stmt.where(RoutineExecution.queued_at >= cutoff)
+    total: int = session.execute(
+        select(func.count()).select_from(stmt.subquery())
+    ).scalar_one()
+    results = list(session.execute(stmt.limit(limit).offset(offset)).scalars().unique())
     rows = cast(
         list[ExecutionRow],
         [
@@ -476,10 +662,12 @@ def get_execution_history(
                 "routine_name": r.routine.name,
                 "status": r.status,
                 "triggered_by": r.triggered_by,
+                "queued_at": r.queued_at,
+                "scheduled_for": r.scheduled_for,
                 "started_at": r.started_at,
                 "completed_at": r.completed_at,
             }
             for r in results
         ],
     )
-    return rows
+    return rows, total

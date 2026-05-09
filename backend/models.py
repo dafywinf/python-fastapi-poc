@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.database import Base
@@ -81,10 +81,51 @@ class RoutineExecution(Base):
     )
     status: Mapped[str] = mapped_column(String, nullable=False)
     triggered_by: Mapped[str] = mapped_column(String, nullable=False)
-    started_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+    queued_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    scheduled_for: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
     completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     routine: Mapped["Routine"] = relationship("Routine", back_populates="executions")
+    action_executions: Mapped[list["ActionExecution"]] = relationship(
+        "ActionExecution",
+        back_populates="execution",
+        cascade="all, delete-orphan",
+        order_by="ActionExecution.position",
+    )
+
+
+class ActionExecution(Base):
+    """A record tracking a single Action's execution within a RoutineExecution."""
+
+    __tablename__ = "action_executions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    execution_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("routine_executions.id"), nullable=False
+    )
+    action_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("actions.id"), nullable=False
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    action_type: Mapped[str] = mapped_column(String, nullable=False)
+    config: Mapped[JSONObject] = mapped_column(JSON, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    execution: Mapped["RoutineExecution"] = relationship(
+        "RoutineExecution", back_populates="action_executions"
+    )

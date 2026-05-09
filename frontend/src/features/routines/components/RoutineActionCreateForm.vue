@@ -1,6 +1,38 @@
+<script setup lang="ts">
+import Button from 'primevue/button'
+import InputText from 'primevue/inputtext'
+import Select from 'primevue/select'
+
+defineProps<{
+  idPrefix: string
+  submitting: boolean
+  configError?: string | null
+}>()
+
+const actionTypeModel = defineModel<'echo' | 'sleep'>('actionType', {
+  required: true,
+})
+const echoMessageModel = defineModel<string>('echoMessage', {
+  required: true,
+})
+const sleepSecondsModel = defineModel<string>('sleepSeconds', {
+  required: true,
+})
+
+const emit = defineEmits<{
+  'type-change': []
+  submit: []
+}>()
+
+const actionOptions = [
+  { label: 'echo', value: 'echo' },
+  { label: 'sleep', value: 'sleep' },
+]
+</script>
+
 <template>
-  <div class="border border-slate-200 rounded-lg p-4 flex flex-col gap-3">
-    <h3 class="text-sm font-semibold text-slate-900 m-0">Add Action</h3>
+  <div class="border border-app-border rounded-lg p-4 flex flex-col gap-3">
+    <h3 class="text-sm font-semibold text-app-text m-0">Add Action</h3>
     <div class="flex items-end gap-3 flex-wrap">
       <div class="flex flex-col gap-1 flex-1 min-w-36">
         <label class="text-sm font-medium text-slate-700" :for="`${idPrefix}-type`"
@@ -47,35 +79,3 @@
     <small v-if="configError" class="text-red-600">{{ configError }}</small>
   </div>
 </template>
-
-<script setup lang="ts">
-import Button from 'primevue/button'
-import InputText from 'primevue/inputtext'
-import Select from 'primevue/select'
-
-defineProps<{
-  idPrefix: string
-  submitting: boolean
-  configError?: string | null
-}>()
-
-const actionTypeModel = defineModel<'echo' | 'sleep'>('actionType', {
-  required: true,
-})
-const echoMessageModel = defineModel<string>('echoMessage', {
-  required: true,
-})
-const sleepSecondsModel = defineModel<string>('sleepSeconds', {
-  required: true,
-})
-
-const emit = defineEmits<{
-  'type-change': []
-  submit: []
-}>()
-
-const actionOptions = [
-  { label: 'echo', value: 'echo' },
-  { label: 'sleep', value: 'sleep' },
-]
-</script>

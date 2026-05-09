@@ -2,6 +2,8 @@ import type {
   Action,
   ActionCreate,
   ActionUpdate,
+  ActiveRoutineExecution,
+  Page,
   Routine,
   RoutineCreate,
   RoutineExecution,
@@ -14,8 +16,17 @@ const ACTIONS_BASE = '/actions'
 const EXECUTIONS_BASE = '/executions'
 
 export const routinesApi = {
-  list(): Promise<Routine[]> {
-    return apiClient.get<Routine[]>(ROUTINES_BASE + '/')
+  list(params?: {
+    search?: string
+    limit?: number
+    offset?: number
+  }): Promise<Page<Routine>> {
+    const p = new URLSearchParams()
+    if (params?.search) p.set('search', params.search)
+    if (params?.limit !== undefined) p.set('limit', String(params.limit))
+    if (params?.offset !== undefined) p.set('offset', String(params.offset))
+    const qs = p.toString()
+    return apiClient.get<Page<Routine>>(`${ROUTINES_BASE}/${qs ? `?${qs}` : ''}`)
   },
 
   get(id: number): Promise<Routine> {
@@ -49,30 +60,47 @@ export const routinesApi = {
     return apiClient.put<Action>(`${ACTIONS_BASE}/${id}`, payload)
   },
 
+  reorderActions(routineId: number, actionIds: number[]): Promise<Action[]> {
+    return apiClient.patch<Action[]>(
+      `${ROUTINES_BASE}/${routineId}/actions/reorder`,
+      { action_ids: actionIds },
+    )
+  },
+
   deleteAction(id: number): Promise<void> {
     return apiClient.delete<void>(`${ACTIONS_BASE}/${id}`)
   },
 
-  runNow(id: number): Promise<{ execution_id: number }> {
+  runNow(id: number, scheduledFor?: Date): Promise<{ execution_id: number }> {
+    const body = scheduledFor ? { scheduled_for: scheduledFor.toISOString() } : undefined
     return apiClient.post<{ execution_id: number }>(
       `${ROUTINES_BASE}/${id}/run`,
+      body,
     )
   },
 
-  activeExecutions(): Promise<RoutineExecution[]> {
-    return apiClient.get<RoutineExecution[]>(`${EXECUTIONS_BASE}/active`)
+  getExecution(executionId: number): Promise<ActiveRoutineExecution> {
+    return apiClient.get<ActiveRoutineExecution>(`${EXECUTIONS_BASE}/${executionId}`)
   },
 
-  executionHistory(
-    limit?: number,
-    routineId?: number,
-  ): Promise<RoutineExecution[]> {
-    const params = new URLSearchParams({ limit: String(limit ?? 10) })
-    if (routineId !== undefined) {
-      params.set('routine_id', String(routineId))
-    }
-    return apiClient.get<RoutineExecution[]>(
-      `${EXECUTIONS_BASE}/history?${params.toString()}`,
+  activeExecutions(): Promise<ActiveRoutineExecution[]> {
+    return apiClient.get<ActiveRoutineExecution[]>(`${EXECUTIONS_BASE}/active`)
+  },
+
+  executionHistory(params?: {
+    limit?: number
+    offset?: number
+    routineId?: number
+    search?: string
+    sinceMinutes?: number
+  }): Promise<Page<RoutineExecution>> {
+    const p = new URLSearchParams({ limit: String(params?.limit ?? 25) })
+    if (params?.offset) p.set('offset', String(params.offset))
+    if (params?.routineId !== undefined) p.set('routine_id', String(params.routineId))
+    if (params?.search) p.set('search', params.search)
+    if (params?.sinceMinutes !== undefined) p.set('since_minutes', String(params.sinceMinutes))
+    return apiClient.get<Page<RoutineExecution>>(
+      `${EXECUTIONS_BASE}/history?${p.toString()}`,
     )
   },
 }

@@ -75,8 +75,8 @@ export async function createRoutine(name: string, token?: string): Promise<{ id:
 export async function deleteRoutinesByName(name: string, token?: string): Promise<void> {
   await withAuthedContext(async (context) => {
     const res = await context.get('/routines/')
-    const routines = (await res.json()) as { id: number; name: string }[]
-    for (const r of routines.filter((r) => r.name === name)) {
+    const body = (await res.json()) as { items: { id: number; name: string }[] }
+    for (const r of body.items.filter((r) => r.name === name)) {
       await context.delete(`/routines/${r.id}`)
     }
   }, token)

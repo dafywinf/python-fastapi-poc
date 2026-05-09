@@ -15,13 +15,12 @@ test.describe('Routines', () => {
     await deleteRoutinesByName('E2E Run Routine', token)
   })
 
-  test('home page loads with three panels', async ({ page }) => {
+  test('home page loads with routines heading and table', async ({ page }) => {
     await allure.story('Dashboard')
     const routinesPage = new RoutinesPage(page)
     await routinesPage.goto()
     await expect(routinesPage.heading).toBeVisible()
-    await expect(routinesPage.executingPanel).toBeVisible()
-    await expect(routinesPage.historyPanel).toBeVisible()
+    await expect(page.getByTestId('routines-table')).toBeVisible()
     await test.info().attach('routines home', {
       body: await page.screenshot(),
       contentType: 'image/png',
@@ -33,16 +32,16 @@ test.describe('Routines', () => {
     const routinesPage = new RoutinesPage(page)
     await routinesPage.goto()
 
-    // Click new routine
+    // Click new routine — navigates to /routines/new
     await routinesPage.newButton.click()
-    const dialog = page.getByRole('dialog')
-    await expect(dialog).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'New Routine' })).toBeVisible()
 
-    // Fill form
-    await dialog.getByPlaceholder('Enter name').fill('E2E Test Routine')
-    await dialog.getByRole('button', { name: 'Create' }).click()
+    // Fill form and submit
+    await page.getByPlaceholder('Enter name').fill('E2E Test Routine')
+    await page.getByRole('button', { name: 'Create' }).first().click()
 
-    // Row should appear
+    // Should navigate back to routines list and row should appear
+    await expect(routinesPage.heading).toBeVisible({ timeout: 10_000 })
     await expect(routinesPage.row('E2E Test Routine')).toBeVisible()
     await test.info().attach('routine created', {
       body: await page.screenshot(),
@@ -67,7 +66,6 @@ test.describe('Routines', () => {
     await expect(row).toBeVisible()
     await row.getByRole('button', { name: '▶ Run' }).click()
 
-    await expect(page.getByText('E2E Run Routine is running')).toBeVisible()
-    await expect(routinesPage.historyPanel).toBeVisible()
+    await expect(page.getByText('E2E Run Routine added to the execution queue')).toBeVisible()
   })
 })

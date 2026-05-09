@@ -89,7 +89,7 @@ describe('routinesApi', () => {
     const fetchSpy = vi.spyOn(global, 'fetch')
     const history: ExecutionHistoryResponse = []
     server.use(routinesHandlers.executionHistory(history))
-    await routinesApi.executionHistory(20, 3)
+    await routinesApi.executionHistory({ limit: 20, routineId: 3 })
 
     expect(fetchSpy).toHaveBeenCalledWith(
       expect.stringContaining('limit=20'),
