@@ -3,7 +3,7 @@
     <AppNavbar />
     <div class="flex flex-1 overflow-hidden">
       <AppSidebar />
-      <main class="flex-1 overflow-y-auto p-7 bg-white">
+      <main class="flex-1 overflow-y-auto p-6 bg-app-surface">
         <RouterView />
       </main>
     </div>
